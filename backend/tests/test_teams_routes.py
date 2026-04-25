@@ -22,17 +22,14 @@ class _Resp:
 
 
 class _TeamsTable:
-    def __init__(self, store, *, fail_first_insert=False):
+    def __init__(self, store, *, fail_first_insert: bool = False):
         self._store = store
         self._filters = {}
-        self._maybe_single = False
-        self._select = "*"
         self._pending_insert = None
         self._fail_first_insert = fail_first_insert
         self._insert_calls = 0
 
-    def select(self, cols="*"):
-        self._select = cols
+    def select(self, cols: str = "*"):
         return self
 
     def insert(self, payload):
@@ -44,7 +41,6 @@ class _TeamsTable:
         return self
 
     def maybe_single(self):
-        self._maybe_single = True
         return self
 
     def execute(self):
@@ -78,14 +74,13 @@ class _TeamsTable:
 
 
 class _FakeSupabase:
-    def __init__(self, *, fail_first_insert=False):
+    def __init__(self, *, fail_first_insert: bool = False):
         self._store = {"teams_by_id": {}, "teams_by_invite": {}}
-        self._fail_first_insert = fail_first_insert
-        self.teams_table = _TeamsTable(self._store, fail_first_insert=fail_first_insert)
+        self._teams = _TeamsTable(self._store, fail_first_insert=fail_first_insert)
 
     def table(self, name):
         assert name == "teams"
-        return self.teams_table
+        return self._teams
 
 
 def _make_client(monkeypatch, fake):
@@ -109,30 +104,26 @@ def test_post_teams_creates_team_and_returns_id_and_invite_code(monkeypatch):
 
 
 def test_get_teams_by_id_includes_total_score(monkeypatch):
-    fake = _FakeSupabase()
-    client = _make_client(monkeypatch, fake)
-
+    client = _make_client(monkeypatch, _FakeSupabase())
     created = client.post("/teams/", json={"name": "Team B"}).json()
-    team_id = created["id"]
 
-    res = client.get(f"/teams/{team_id}")
+    res = client.get(f"/teams/{created['id']}")
     assert res.status_code == 200
     body = res.json()
-    assert body["id"] == team_id
+    assert body["id"] == created["id"]
     assert body["total_score"] == 0
 
 
 def test_get_teams_by_invite_code_returns_team_or_404(monkeypatch):
     client = _make_client(monkeypatch, _FakeSupabase())
     created = client.post("/teams/", json={"name": "Team C"}).json()
-    invite_code = created["invite_code"]
 
-    res = client.get("/teams/", params={"invite_code": invite_code})
-    assert res.status_code == 200
-    assert res.json()["invite_code"] == invite_code
+    ok = client.get("/teams/", params={"invite_code": created["invite_code"]})
+    assert ok.status_code == 200
+    assert ok.json()["invite_code"] == created["invite_code"]
 
-    res2 = client.get("/teams/", params={"invite_code": "DOESNOTEXIST"})
-    assert res2.status_code == 404
+    missing = client.get("/teams/", params={"invite_code": "DOESNOTEXIST"})
+    assert missing.status_code == 404
 
 
 def test_post_teams_retries_on_invite_code_unique_violation(monkeypatch):
@@ -141,4 +132,3 @@ def test_post_teams_retries_on_invite_code_unique_violation(monkeypatch):
     assert res.status_code == 200
     body = res.json()
     assert "id" in body and "invite_code" in body
-
