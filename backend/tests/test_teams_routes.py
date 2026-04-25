@@ -1,0 +1,144 @@
+import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+
+try:
+    import python_multipart as _pm  # noqa: F401
+
+    _HAVE_MULTIPART = True
+except Exception:
+    try:
+        import multipart as _mp  # type: ignore  # noqa: F401
+
+        _HAVE_MULTIPART = True
+    except Exception:
+        _HAVE_MULTIPART = False
+
+
+class _Resp:
+    def __init__(self, data):
+        self.data = data
+
+
+class _TeamsTable:
+    def __init__(self, store, *, fail_first_insert=False):
+        self._store = store
+        self._filters = {}
+        self._maybe_single = False
+        self._select = "*"
+        self._pending_insert = None
+        self._fail_first_insert = fail_first_insert
+        self._insert_calls = 0
+
+    def select(self, cols="*"):
+        self._select = cols
+        return self
+
+    def insert(self, payload):
+        self._pending_insert = payload
+        return self
+
+    def eq(self, k, v):
+        self._filters[k] = v
+        return self
+
+    def maybe_single(self):
+        self._maybe_single = True
+        return self
+
+    def execute(self):
+        if self._pending_insert is not None:
+            self._insert_calls += 1
+            if self._fail_first_insert and self._insert_calls == 1:
+                raise Exception(
+                    'duplicate key value violates unique constraint "teams_invite_code_key"'
+                )
+
+            tid = str(uuid.uuid4())
+            row = {
+                "id": tid,
+                "name": self._pending_insert["name"],
+                "invite_code": self._pending_insert["invite_code"],
+                "total_score": 0,
+            }
+            self._store["teams_by_id"][tid] = row
+            self._store["teams_by_invite"][row["invite_code"]] = row
+            return _Resp([{"id": tid, "invite_code": row["invite_code"]}])
+
+        if "id" in self._filters:
+            row = self._store["teams_by_id"].get(self._filters["id"])
+            return _Resp(row if row is not None else None)
+
+        if "invite_code" in self._filters:
+            row = self._store["teams_by_invite"].get(self._filters["invite_code"])
+            return _Resp(row if row is not None else None)
+
+        raise AssertionError("Unexpected query in fake teams table")
+
+
+class _FakeSupabase:
+    def __init__(self, *, fail_first_insert=False):
+        self._store = {"teams_by_id": {}, "teams_by_invite": {}}
+        self._fail_first_insert = fail_first_insert
+        self.teams_table = _TeamsTable(self._store, fail_first_insert=fail_first_insert)
+
+    def table(self, name):
+        assert name == "teams"
+        return self.teams_table
+
+
+def _make_client(monkeypatch, fake):
+    if not _HAVE_MULTIPART:
+        pytest.skip('FastAPI Form/File routes require "python-multipart"')
+
+    import main
+    import routes.teams as teams_routes
+
+    monkeypatch.setattr(teams_routes, "get_supabase", lambda: fake)
+    return TestClient(main.app)
+
+
+def test_post_teams_creates_team_and_returns_id_and_invite_code(monkeypatch):
+    client = _make_client(monkeypatch, _FakeSupabase())
+    res = client.post("/teams/", json={"name": "Team A"})
+    assert res.status_code == 200
+    body = res.json()
+    assert "id" in body
+    assert "invite_code" in body
+
+
+def test_get_teams_by_id_includes_total_score(monkeypatch):
+    fake = _FakeSupabase()
+    client = _make_client(monkeypatch, fake)
+
+    created = client.post("/teams/", json={"name": "Team B"}).json()
+    team_id = created["id"]
+
+    res = client.get(f"/teams/{team_id}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["id"] == team_id
+    assert body["total_score"] == 0
+
+
+def test_get_teams_by_invite_code_returns_team_or_404(monkeypatch):
+    client = _make_client(monkeypatch, _FakeSupabase())
+    created = client.post("/teams/", json={"name": "Team C"}).json()
+    invite_code = created["invite_code"]
+
+    res = client.get("/teams/", params={"invite_code": invite_code})
+    assert res.status_code == 200
+    assert res.json()["invite_code"] == invite_code
+
+    res2 = client.get("/teams/", params={"invite_code": "DOESNOTEXIST"})
+    assert res2.status_code == 404
+
+
+def test_post_teams_retries_on_invite_code_unique_violation(monkeypatch):
+    client = _make_client(monkeypatch, _FakeSupabase(fail_first_insert=True))
+    res = client.post("/teams/", json={"name": "Team D"})
+    assert res.status_code == 200
+    body = res.json()
+    assert "id" in body and "invite_code" in body
+

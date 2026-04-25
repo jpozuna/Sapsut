@@ -31,6 +31,7 @@ class _TableQuery:
         self._order = None
         self._insert_payloads = []
         self._select_cols = "*"
+        self._single = False
 
     def select(self, cols="*"):
         self._select_cols = cols
@@ -46,6 +47,10 @@ class _TableQuery:
 
     def order(self, k, desc=False):
         self._order = (k, bool(desc))
+        return self
+
+    def single(self):
+        self._single = True
         return self
 
     def insert(self, payload):
@@ -65,6 +70,8 @@ class _TableQuery:
             rows.sort(key=lambda r: r.get(key), reverse=desc)
         if self._limit is not None:
             rows = rows[: self._limit]
+        if self._single:
+            return _Resp(rows[0] if rows else None)
         return _Resp(rows)
 
 
@@ -117,6 +124,7 @@ def app_and_client(monkeypatch):
     fake.db["tasks"].append({"id": "task1", "allow_multiple_submissions": True})
 
     monkeypatch.setattr(submissions_routes, "get_supabase", lambda: fake)
+    monkeypatch.setattr(submissions_routes, "score_submission", lambda *a, **kw: None)
 
     app = FastAPI()
     app.include_router(submissions_routes.router, prefix="/submissions")
