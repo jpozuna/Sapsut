@@ -52,6 +52,23 @@ def test_parse_score_json_invalid(text):
         scoring._parse_score_json(text, max_points=5)
 
 
+def test_cosine_similarity_happy_path():
+    assert scoring._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == 1.0
+    assert scoring._cosine_similarity([1.0, 0.0], [0.0, 1.0]) == 0.0
+
+
+def test_cosine_similarity_mismatched_lengths_is_neg_inf():
+    assert scoring._cosine_similarity([1.0], [1.0, 2.0]) == float("-inf")
+
+
+def test_cosine_similarity_empty_is_neg_inf():
+    assert scoring._cosine_similarity([], []) == float("-inf")
+
+
+def test_cosine_similarity_zero_norm_is_neg_inf():
+    assert scoring._cosine_similarity([0.0, 0.0], [1.0, 0.0]) == float("-inf")
+
+
 class _FakeResp:
     def __init__(self, data):
         self.data = data
