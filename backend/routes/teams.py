@@ -44,6 +44,8 @@ def create_team(payload: TeamCreateIn) -> Any:
             if not row or "id" not in row or "invite_code" not in row:
                 raise HTTPException(status_code=500, detail="Failed to create team")
             return {"id": row["id"], "invite_code": row["invite_code"]}
+        except HTTPException:
+            raise
         except Exception as e:
             last_exc = e
             if _is_invite_code_unique_violation(e):
