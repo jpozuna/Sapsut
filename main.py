@@ -8,7 +8,9 @@ from pydantic import BaseModel
 from supabase import Client, create_client
 
 
+# Prefer repo-root .env, but also support backend/.env for local dev.
 load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "backend", ".env"))
 
 app = FastAPI(title="Sapsut API")
 
