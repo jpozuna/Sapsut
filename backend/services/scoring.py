@@ -4,13 +4,16 @@ import base64
 import json
 import math
 import os
+import mimetypes
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+import anyio
 import anthropic
 import openai
 
 from services import get_supabase
+from services.storage import storage_bucket
 
 
 def _get_openai_client() -> openai.OpenAI:
@@ -68,10 +71,6 @@ def _parse_score_json(text: str, *, max_points: int) -> ScoreResult:
     return ScoreResult(score=score, confidence=confidence, rationale=rationale, raw=obj)
 
 
-def _storage_bucket() -> str:
-    return os.getenv("SUPABASE_STORAGE_BUCKET", "submissions").strip() or "submissions"
-
-
 def _cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
     a_list = list(a)
     b_list = list(b)
@@ -109,11 +108,18 @@ def _mark_submission_error(
     supabase.table("submissions").update(payload).eq("id", submission_id).execute()
 
 
+def _mime_type_from_path(path: str) -> str:
+    mt, _ = mimetypes.guess_type(path)
+    if mt and mt.startswith("image/"):
+        return mt
+    return "image/jpeg"
+
+
 async def score_submission(
     submission_id: str,
     task_id: str,
     team_id: str,
-    text_answer: str,
+    text_answer: Optional[str],
     photo_path: Optional[str],
 ):
     try:
@@ -142,7 +148,10 @@ async def score_submission(
         gpt4o_description = None
         if photo_path:
             try:
-                photo_bytes = supabase.storage.from_(_storage_bucket()).download(photo_path)
+                # Supabase Storage download is synchronous; offload to worker thread.
+                photo_bytes = await anyio.to_thread.run_sync(
+                    lambda: supabase.storage.from_(storage_bucket()).download(photo_path)
+                )
             except Exception as e:
                 _mark_submission_error(
                     supabase,
@@ -153,6 +162,7 @@ async def score_submission(
                 return
 
             b64 = base64.b64encode(photo_bytes).decode("utf-8")
+            image_mime = _mime_type_from_path(photo_path)
             try:
                 response = openai_client.chat.completions.create(
                     model="gpt-4o",
@@ -160,7 +170,7 @@ async def score_submission(
                         {
                             "role": "user",
                             "content": [
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                                {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{b64}"}},
                                 {"type": "text", "text": "Describe exactly what you see in this image in detail."},
                             ],
                         }
@@ -177,7 +187,8 @@ async def score_submission(
                 return
 
         # If text answer is provided, check for exact match
-        if text_answer and not photo_path:
+        normalized_text_answer = text_answer or ""
+        if normalized_text_answer and not photo_path:
             try:
                 criteria = (
                     supabase.table("task_criteria")
@@ -190,7 +201,7 @@ async def score_submission(
             except Exception:
                 criteria = []
             for c in criteria:
-                if text_answer.strip().lower() == c["value"].strip().lower():
+                if normalized_text_answer.strip().lower() == c["value"].strip().lower():
                     _finalize_score(
                         supabase,
                         submission_id,
@@ -204,7 +215,15 @@ async def score_submission(
                     return
 
         # Step 3: Claude scoring
-        submission_text = gpt4o_description or text_answer or ""
+        submission_text = gpt4o_description or normalized_text_answer
+        if not submission_text.strip():
+            _mark_submission_error(
+                supabase,
+                submission_id,
+                "No submission content to score (empty text and no photo description).",
+                ai_result={"mode": "empty_submission"},
+            )
+            return
         # RAG: embed submission_text and retrieve top matching criteria by cosine similarity.
         retrieved_criteria: List[Dict[str, Any]] = []
         if submission_text.strip():
