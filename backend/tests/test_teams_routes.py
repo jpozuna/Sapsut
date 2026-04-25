@@ -1,6 +1,19 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
+
+try:
+    import python_multipart as _pm  # noqa: F401
+
+    _HAVE_MULTIPART = True
+except Exception:
+    try:
+        import multipart as _mp  # type: ignore  # noqa: F401
+
+        _HAVE_MULTIPART = True
+    except Exception:
+        _HAVE_MULTIPART = False
 
 
 class _Resp:
@@ -71,6 +84,9 @@ class _FakeSupabase:
 
 
 def _make_client(monkeypatch, fake):
+    if not _HAVE_MULTIPART:
+        pytest.skip('FastAPI Form/File routes require "python-multipart"')
+
     import main
     import routes.teams as teams_routes
 
