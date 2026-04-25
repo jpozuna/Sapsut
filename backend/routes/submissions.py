@@ -1,13 +1,84 @@
 import uuid
 
 import anyio
-from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
+from typing import Any, Dict, Optional
 
 from services import get_supabase
 from services.scoring import score_submission
 from services.storage import storage_bucket
 
 router = APIRouter()
+
+
+def _extract_signed_url(resp: Any) -> Optional[str]:
+    if not resp:
+        return None
+    if isinstance(resp, str):
+        return resp
+    if isinstance(resp, dict):
+        for k in ("signedURL", "signed_url", "signedUrl", "url"):
+            v = resp.get(k)
+            if isinstance(v, str) and v:
+                return v
+        data = resp.get("data")
+        if isinstance(data, dict):
+            for k in ("signedURL", "signed_url", "signedUrl", "url"):
+                v = data.get(k)
+                if isinstance(v, str) and v:
+                    return v
+    return None
+
+
+@router.get("/{id}")
+async def get_submission(id: str) -> Dict[str, Any]:
+    supabase = get_supabase()
+    rows = (
+        supabase.table("submissions")
+        .select(
+            "id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,ai_result,created_at"
+        )
+        .eq("id", id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    submission: Dict[str, Any] = rows[0]
+
+    photo_path = submission.get("photo_url")
+    if photo_path:
+        try:
+            signed = await anyio.to_thread.run_sync(
+                lambda: supabase.storage.from_(storage_bucket()).create_signed_url(photo_path, 600)
+            )
+            signed_url = _extract_signed_url(signed)
+            if signed_url:
+                submission["photo_signed_url"] = signed_url
+        except Exception:
+            pass
+
+    return submission
+
+
+@router.get("/")
+def list_submissions(
+    team_id: str = Query(...),
+    task_id: Optional[str] = Query(None),
+) -> Any:
+    supabase = get_supabase()
+    q = (
+        supabase.table("submissions")
+        .select(
+            "id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,ai_result,created_at"
+        )
+        .eq("team_id", team_id)
+        .order("created_at", desc=True)
+    )
+    if task_id:
+        q = q.eq("task_id", task_id)
+    return q.execute().data or []
 
 
 @router.post("/")
@@ -61,7 +132,7 @@ async def create_submission(
         photo_bytes = await photo.read()
         content_type = (photo.content_type or "application/octet-stream").strip()
         ext = (content_type.split("/")[-1] if "/" in content_type else "bin") or "bin"
-        photo_path = f"submissions/{submission_id}.{ext}"
+        photo_path = f"{team_id}/{task_id}/{submission_id}.{ext}"
         try:
             # Supabase Storage upload is synchronous; offload to worker thread.
             await anyio.to_thread.run_sync(

@@ -7,5 +7,5 @@ def storage_bucket() -> str:
     """
     Shared Supabase Storage bucket selector for uploads/downloads.
     """
-    return os.getenv("SUPABASE_STORAGE_BUCKET", "submissions").strip() or "submissions"
+    return os.getenv("SUPABASE_STORAGE_BUCKET", "submission-photos").strip() or "submission-photos"
 
