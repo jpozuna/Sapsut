@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from auth.organizer import require_organizer
 from services import get_supabase
-from services.scoring import score_submission
+from services.scoring import score_submission, _finalize_score
 
 router = APIRouter(dependencies=[Depends(require_organizer)])
 
@@ -15,15 +15,116 @@ router = APIRouter(dependencies=[Depends(require_organizer)])
 @router.get("/review-queue")
 def list_review_queue() -> Any:
     supabase = get_supabase()
-    # Keep it lightweight: return raw queue rows ordered newest first.
+    # Join submissions so organizer UI can display submission content per row.
     return (
         supabase.table("review_queue")
-        .select("*")
+        .select(
+            "id,submission_id,claude_score,claude_rationale,confidence,created_at,"
+            "submission:submissions(id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,created_at)"
+        )
         .order("created_at", desc=True)
         .execute()
         .data
         or []
     )
+
+
+class ReviewActionOk(BaseModel):
+    submission_id: str
+    status: str
+    score: int
+
+
+def _get_queue_row_or_404(queue_id: str) -> Dict[str, Any]:
+    supabase = get_supabase()
+    row = (
+        supabase.table("review_queue")
+        .select("id,submission_id,claude_score,claude_rationale,confidence,created_at")
+        .eq("id", queue_id)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Review queue item not found")
+    return row
+
+
+def _get_submission_or_404(submission_id: str) -> Dict[str, Any]:
+    supabase = get_supabase()
+    row = (
+        supabase.table("submissions")
+        .select("id,team_id,status,score")
+        .eq("id", submission_id)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return row
+
+
+class OverrideIn(BaseModel):
+    score: int = Field(ge=0)
+    rationale: Optional[str] = None
+
+
+@router.post("/review-queue/{queue_id}/approve")
+def approve_review_queue_item(queue_id: str) -> Dict[str, Any]:
+    supabase = get_supabase()
+    queue_row = _get_queue_row_or_404(queue_id)
+    submission = _get_submission_or_404(queue_row["submission_id"])
+
+    suggested = queue_row.get("claude_score")
+    if suggested is None:
+        raise HTTPException(status_code=400, detail="Queue item is missing claude_score")
+
+    rationale = (queue_row.get("claude_rationale") or "Organizer approved").strip() or "Organizer approved"
+    queue_confidence = queue_row.get("confidence")
+    confidence = 1.0 if queue_confidence is None else float(queue_confidence)
+
+    _finalize_score(
+        supabase,
+        submission_id=submission["id"],
+        team_id=submission["team_id"],
+        score=int(suggested),
+        confidence=confidence,
+        rationale=rationale,
+        status="reviewed",
+        ai_result={"mode": "organizer_approve", "queue_id": queue_id},
+    )
+
+    # Remove from queue after decision.
+    supabase.table("review_queue").delete().eq("id", queue_id).execute()
+    return {"submission_id": submission["id"], "status": "reviewed", "score": int(suggested)}
+
+
+@router.post("/review-queue/{queue_id}/override")
+def override_review_queue_item(queue_id: str, payload: OverrideIn) -> Dict[str, Any]:
+    supabase = get_supabase()
+    queue_row = _get_queue_row_or_404(queue_id)
+    submission = _get_submission_or_404(queue_row["submission_id"])
+
+    rationale = (payload.rationale or "").strip() or "Organizer override"
+    _finalize_score(
+        supabase,
+        submission_id=submission["id"],
+        team_id=submission["team_id"],
+        score=int(payload.score),
+        confidence=1.0,
+        rationale=rationale,
+        status="reviewed",
+        ai_result={
+            "mode": "organizer_override",
+            "queue_id": queue_id,
+            "suggested_score": queue_row.get("claude_score"),
+            "suggested_rationale": queue_row.get("claude_rationale"),
+        },
+    )
+
+    supabase.table("review_queue").delete().eq("id", queue_id).execute()
+    return {"submission_id": submission["id"], "status": "reviewed", "score": int(payload.score)}
 
 
 class RescoreIn(BaseModel):
