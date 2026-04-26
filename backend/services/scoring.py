@@ -5,7 +5,7 @@ import json
 import math
 import os
 import mimetypes
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import anyio

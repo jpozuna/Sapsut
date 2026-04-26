@@ -45,6 +45,8 @@ class _TeamsTable:
 
     def execute(self):
         if self._pending_insert is not None:
+            payload = self._pending_insert
+            self._pending_insert = None
             self._insert_calls += 1
             if self._fail_first_insert and self._insert_calls == 1:
                 raise Exception(
@@ -54,8 +56,8 @@ class _TeamsTable:
             tid = str(uuid.uuid4())
             row = {
                 "id": tid,
-                "name": self._pending_insert["name"],
-                "invite_code": self._pending_insert["invite_code"],
+                "name": payload["name"],
+                "invite_code": payload["invite_code"],
                 "total_score": 0,
             }
             self._store["teams_by_id"][tid] = row
