@@ -210,7 +210,7 @@ def rescore_submission(
         supabase.table("review_queue").insert(
             {
                 "submission_id": row["id"],
-                "suggested_score": int(row.get("score") or 0),
+                "claude_score": int(row.get("score") or 0),
                 "claude_rationale": (row.get("rationale") or "Rescore requested").strip() or "Rescore requested",
             }
         ).execute()

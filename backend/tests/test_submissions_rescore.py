@@ -125,7 +125,7 @@ def test_rescore_non_terminal_queues_and_logs(monkeypatch, app_client):
     assert fake.db["review_queue"], "expected audit row inserted into review_queue"
     audit = fake.db["review_queue"][0]
     assert audit["submission_id"] == "sub1"
-    assert audit["suggested_score"] == 3
+    assert audit["claude_score"] == 3
     assert audit["claude_rationale"] == "ok"
 
     assert called["calls"], "expected score_submission to be queued via BackgroundTasks"

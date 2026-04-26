@@ -111,7 +111,7 @@ class _FakeSupabase:
 @pytest.mark.asyncio
 async def test_score_submission_idempotent(monkeypatch):
     # If a submission is already in a terminal state, score_submission should no-op early (unless forced).
-    fake = _FakeSupabase(status="reviewed")
+    fake = _FakeSupabase(status="approved")
     monkeypatch.setattr(scoring, "get_supabase", lambda: fake)
 
     # If it doesn't early return, it will try to build clients and/or query tasks and the fake will explode.

@@ -141,7 +141,7 @@ async def score_submission(
             .execute()
             .data
         )
-        terminal_statuses = {"auto_approved", "reviewed"}
+        terminal_statuses = {"approved", "flagged", "error", "auto_approved", "reviewed"}
         if (not force) and existing and existing.get("status") in terminal_statuses:
             return
 
