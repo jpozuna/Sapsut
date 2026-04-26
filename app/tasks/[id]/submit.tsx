@@ -178,10 +178,14 @@ export default function TaskSubmitScreen() {
       }
 
       const ok = body as CreateSubmissionOk | null;
-      if (ok?.submission_id) {
+      if (ok?.submission_id && ok?.status !== 'error') {
         setSubmitSuccessId(ok.submission_id);
       } else {
-        setSubmitError('Submission failed. Please try again.');
+        setSubmitError(
+          ok?.status === 'error'
+            ? 'Photo upload failed. Please try again.'
+            : 'Submission failed. Please try again.',
+        );
       }
     } catch (e) {
       setSubmitError(
