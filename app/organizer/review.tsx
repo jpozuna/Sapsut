@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,6 +13,7 @@ import { Stack } from 'expo-router';
 import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { toAppError } from '@/lib/app-error';
 import { organizerJson } from '@/lib/organizer-api';
+import { useRole } from '@/lib/role-context';
 
 type Submission = {
   id: string;
@@ -41,6 +42,13 @@ type ReviewQueueRow = {
 export default function OrganizerReviewDashboard() {
   const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
 
+  const {
+    role,
+    organizerCode: sessionOrganizerCode,
+    setOrganizerCode: setSessionOrganizerCode,
+    setRole,
+  } = useRole();
+
   const [organizerCode, setOrganizerCode] = useState('');
   const [rows, setRows] = useState<ReviewQueueRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,6 +59,35 @@ export default function OrganizerReviewDashboard() {
   const [busyById, setBusyById] = useState<Record<string, boolean>>({});
 
   const canLoad = useMemo(() => Boolean(organizerCode.trim()), [organizerCode]);
+  const didPrefillOrganizerCodeRef = useRef(false);
+  const didAutoLoadRef = useRef(false);
+
+  useEffect(() => {
+    if (didPrefillOrganizerCodeRef.current) return;
+    const trimmed = sessionOrganizerCode.trim();
+    if (!trimmed) return;
+    didPrefillOrganizerCodeRef.current = true;
+    setOrganizerCode(trimmed);
+  }, [sessionOrganizerCode]);
+
+  useEffect(() => {
+    // Keep session state in sync while typing (session-only; not persisted).
+    const trimmed = organizerCode.trim();
+    const sessionTrimmed = sessionOrganizerCode.trim();
+    if (trimmed === sessionTrimmed) return;
+    if (trimmed) {
+      if (role !== 'organizer') setRole('organizer');
+      setSessionOrganizerCode(trimmed);
+      return;
+    }
+    setSessionOrganizerCode('');
+  }, [
+    organizerCode,
+    role,
+    sessionOrganizerCode,
+    setRole,
+    setSessionOrganizerCode,
+  ]);
 
   const loadQueue = useCallback(async () => {
     if (!organizerCode.trim()) return;
@@ -74,6 +111,16 @@ export default function OrganizerReviewDashboard() {
     setRows([]);
     setError(null);
   }, [organizerCode]);
+
+  useEffect(() => {
+    // Smooth UX: if we arrive with a session code, auto-load once.
+    if (!didAutoLoadRef.current && canLoad) {
+      didAutoLoadRef.current = true;
+      loadQueue().catch(() => {
+        // Screen shows error state already.
+      });
+    }
+  }, [canLoad, loadQueue]);
 
   const setBusy = useCallback((id: string, v: boolean) => {
     setBusyById((prev) => ({ ...prev, [id]: v }));
