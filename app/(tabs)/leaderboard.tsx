@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type PressableStateCallbackType,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { ScreenState } from '@/components/screen-state';
@@ -139,9 +146,9 @@ export default function LeaderboardScreen() {
           </Text>
         </View>
 
-        <FlatList
+        <FlatList<LeaderboardTeam>
           data={sorted}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={[
             styles.listContent,
             sorted.length === 0 ? styles.listContentEmpty : null,
@@ -206,7 +213,7 @@ export default function LeaderboardScreen() {
               </Text>
               <Pressable
                 onPress={onRetry}
-                style={({ pressed }) => [
+                style={({ pressed }: PressableStateCallbackType) => [
                   styles.retryButton,
                   { borderColor: tint },
                   pressed ? styles.retryButtonPressed : null,
