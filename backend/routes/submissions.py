@@ -89,7 +89,8 @@ async def create_submission(
     task_id: str = Form(...),
     team_id: str = Form(...),
     text_answer: str = Form(None),
-    photo: UploadFile = File(None)
+    photo_path: str = Form(None),
+    photo: UploadFile = File(None),
 ):
     submission_id = str(uuid.uuid4())
     supabase = get_supabase()
@@ -125,21 +126,22 @@ async def create_submission(
             }
 
     normalized_text_answer = text_answer or ""
-    if not normalized_text_answer.strip() and photo is None:
-        return {"error": "Submission must include text_answer or photo."}
+    normalized_photo_path = (photo_path or "").strip() or None
+    if not normalized_text_answer.strip() and (photo is None) and (normalized_photo_path is None):
+        return {"error": "Submission must include text_answer, photo, or photo_path."}
 
-    photo_path = None
-    if photo is not None:
+    stored_photo_path = normalized_photo_path
+    if (stored_photo_path is None) and (photo is not None):
         # Important: read and upload during the request lifecycle.
         photo_bytes = await photo.read()
         content_type = (photo.content_type or "application/octet-stream").strip()
         ext = (content_type.split("/")[-1] if "/" in content_type else "bin") or "bin"
-        photo_path = f"{team_id}/{task_id}/{submission_id}.{ext}"
+        stored_photo_path = f"{team_id}/{task_id}/{submission_id}.{ext}"
         try:
             # Supabase Storage upload is synchronous; offload to worker thread.
             await anyio.to_thread.run_sync(
                 lambda: supabase.storage.from_(storage_bucket()).upload(
-                    photo_path,
+                    stored_photo_path,
                     photo_bytes,
                     file_options={"content-type": content_type, "upsert": True},
                 )
@@ -165,12 +167,12 @@ async def create_submission(
         "team_id": team_id,
         "text_answer": normalized_text_answer,
         # Persist object path in existing schema column name.
-        "photo_url": photo_path,
+        "photo_url": stored_photo_path,
         "status": "pending"
     }
     supabase.table("submissions").insert(submission).execute()
     
-    background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, photo_path, False)
+    background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, stored_photo_path, False)
     
     return {"submission_id": submission_id, "status": "pending"}
 

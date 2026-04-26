@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -9,6 +10,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
+import { uploadSubmissionPhoto } from '@/lib/storage';
 
 type Task = {
   id: string | number;
@@ -36,12 +38,21 @@ export default function TaskSubmitScreen() {
   const [textAnswer, setTextAnswer] = useState('');
   const [photoAsset, setPhotoAsset] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccessId, setSubmitSuccessId] = useState<string | null>(null);
 
   const taskId = String(id ?? '');
+
+  useEffect(() => {
+    // `expo-image-picker` does not reliably expose a camera-availability API across SDKs.
+    // Treat native platforms as "camera capable" and fallback at runtime if launching fails.
+    setCameraAvailable(Platform.OS === 'ios' || Platform.OS === 'android');
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -95,6 +106,7 @@ export default function TaskSubmitScreen() {
   const onPickPhoto = useCallback(async () => {
     setSubmitError(null);
     setSubmitSuccessId(null);
+    setPhotoPath(null);
 
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -112,8 +124,38 @@ export default function TaskSubmitScreen() {
     setPhotoAsset(asset);
   }, []);
 
+  const onTakePhoto = useCallback(async () => {
+    setSubmitError(null);
+    setSubmitSuccessId(null);
+    setPhotoPath(null);
+
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      setSubmitError('Camera permission is required to take a photo.');
+      return;
+    }
+
+    let res: ImagePicker.ImagePickerResult;
+    try {
+      res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.9,
+      });
+    } catch {
+      // Fallback to library if camera isn't available (e.g., simulator) or fails to launch.
+      setCameraAvailable(false);
+      await onPickPhoto();
+      return;
+    }
+    if (res.canceled) return;
+    const asset = res.assets?.[0] ?? null;
+    setPhotoAsset(asset);
+  }, [onPickPhoto]);
+
   const onRemovePhoto = useCallback(() => {
     setPhotoAsset(null);
+    setPhotoPath(null);
   }, []);
 
   const onSubmit = useCallback(async () => {
@@ -123,6 +165,30 @@ export default function TaskSubmitScreen() {
     setSubmitSuccessId(null);
 
     try {
+      let uploadedPath: string | null = photoPath;
+
+      if (photoAsset && !uploadedPath) {
+        setIsUploadingPhoto(true);
+        try {
+          const { path } = await uploadSubmissionPhoto({
+            asset: photoAsset,
+            teamId,
+            taskId,
+          });
+          uploadedPath = path;
+          setPhotoPath(path);
+        } catch (e) {
+          setSubmitError(
+            e instanceof Error
+              ? e.message
+              : 'Photo upload failed. Please try again.',
+          );
+          return;
+        } finally {
+          setIsUploadingPhoto(false);
+        }
+      }
+
       const fd = new FormData();
       fd.append('task_id', taskId);
       fd.append('team_id', teamId.trim());
@@ -131,22 +197,8 @@ export default function TaskSubmitScreen() {
         fd.append('text_answer', textAnswer);
       }
 
-      if (photoAsset?.uri) {
-        const uri = photoAsset.uri;
-        const name = uri.split('/').pop() || 'photo.jpg';
-        const ext = name.split('.').pop()?.toLowerCase();
-        const type =
-          ext === 'png'
-            ? 'image/png'
-            : ext === 'webp'
-              ? 'image/webp'
-              : 'image/jpeg';
-
-        fd.append('photo', {
-          uri,
-          name,
-          type,
-        } as unknown as Blob);
+      if (uploadedPath) {
+        fd.append('photo_path', uploadedPath);
       }
 
       const res = await fetch(apiUrl('/submissions/'), {
@@ -192,9 +244,10 @@ export default function TaskSubmitScreen() {
         e instanceof Error ? e.message : 'Submission failed. Please try again.',
       );
     } finally {
+      setIsUploadingPhoto(false);
       setIsSubmitting(false);
     }
-  }, [canSubmit, photoAsset, taskId, teamId, textAnswer]);
+  }, [canSubmit, photoAsset, photoPath, taskId, teamId, textAnswer]);
 
   return (
     <>
@@ -265,6 +318,23 @@ export default function TaskSubmitScreen() {
               <ThemedText type="defaultSemiBold">Photo</ThemedText>
               <View style={styles.photoRow}>
                 <Pressable
+                  onPress={onTakePhoto}
+                  disabled={isSubmitting}
+                  style={({ pressed }) => [
+                    styles.button,
+                    { borderColor: tint },
+                    pressed ? styles.buttonPressed : null,
+                  ]}
+                >
+                  <ThemedText type="defaultSemiBold" style={{ color: tint }}>
+                    {cameraAvailable === false
+                      ? 'Camera unavailable'
+                      : photoAsset
+                        ? 'Retake photo'
+                        : 'Take photo'}
+                  </ThemedText>
+                </Pressable>
+                <Pressable
                   onPress={onPickPhoto}
                   disabled={isSubmitting}
                   style={({ pressed }) => [
@@ -274,7 +344,7 @@ export default function TaskSubmitScreen() {
                   ]}
                 >
                   <ThemedText type="defaultSemiBold" style={{ color: tint }}>
-                    {photoAsset ? 'Replace photo' : 'Pick a photo'}
+                    {photoAsset ? 'Pick different' : 'Pick from library'}
                   </ThemedText>
                 </Pressable>
                 {photoAsset ? (
@@ -292,9 +362,32 @@ export default function TaskSubmitScreen() {
                 ) : null}
               </View>
               {photoAsset ? (
-                <ThemedText style={styles.hint}>
-                  Selected: {photoAsset.fileName ?? photoAsset.uri}
-                </ThemedText>
+                <>
+                  <ThemedText style={styles.hint}>
+                    Selected: {photoAsset.fileName ?? photoAsset.uri}
+                  </ThemedText>
+                  <View style={styles.previewFrame}>
+                    <Image
+                      source={{ uri: photoAsset.uri }}
+                      style={styles.previewImage}
+                      contentFit="cover"
+                      accessibilityLabel="Selected photo preview"
+                    />
+                  </View>
+                  {photoPath ? (
+                    <ThemedText style={styles.hint}>
+                      Uploaded path:{' '}
+                      <ThemedText type="defaultSemiBold">
+                        {photoPath}
+                      </ThemedText>
+                    </ThemedText>
+                  ) : null}
+                  {isUploadingPhoto ? (
+                    <ThemedText style={styles.hint}>
+                      Uploading photo…
+                    </ThemedText>
+                  ) : null}
+                </>
               ) : (
                 <ThemedText style={styles.hint}>No photo selected.</ThemedText>
               )}
@@ -381,6 +474,17 @@ const styles = StyleSheet.create({
   buttonPressed: {
     opacity: 0.85,
     transform: [{ scale: 0.99 }],
+  },
+  previewFrame: {
+    marginTop: 10,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  previewImage: {
+    width: '100%',
+    height: 220,
   },
   errorText: {
     opacity: 0.95,
