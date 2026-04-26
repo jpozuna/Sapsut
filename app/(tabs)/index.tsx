@@ -54,6 +54,8 @@ export default function TaskListScreen() {
   const [error, setError] = useState<unknown>(undefined);
 
   const fetchTasks = useCallback(async () => {
+    // Note: This does not cancel in-flight requests on unmount. For production,
+    // we should add an AbortController pattern to prevent state updates after unmount.
     setError(undefined);
     const data = await httpJson<Task[]>(apiUrl('/tasks/'));
     setTasks(Array.isArray(data) ? data : []);
@@ -135,9 +137,10 @@ export default function TaskListScreen() {
             return (
               <Pressable
                 onPress={() =>
-                  router.push(
-                    `/tasks/${encodeURIComponent(String(item.id))}/submit` as any,
-                  )
+                  router.push({
+                    pathname: '/tasks/[id]/submit',
+                    params: { id: String(item.id) },
+                  })
                 }
                 style={({ pressed }) => [
                   styles.card,
