@@ -59,22 +59,28 @@ export default function OrganizerReviewDashboard() {
   const [busyById, setBusyById] = useState<Record<string, boolean>>({});
 
   const canLoad = useMemo(() => Boolean(organizerCode.trim()), [organizerCode]);
+  const didPrefillOrganizerCodeRef = useRef(false);
   const didAutoLoadRef = useRef(false);
 
   useEffect(() => {
-    // If we entered organizer mode from Settings, pre-fill this screen.
-    if (!organizerCode.trim() && sessionOrganizerCode.trim()) {
-      setOrganizerCode(sessionOrganizerCode.trim());
-    }
-  }, [organizerCode, sessionOrganizerCode]);
+    if (didPrefillOrganizerCodeRef.current) return;
+    const trimmed = sessionOrganizerCode.trim();
+    if (!trimmed) return;
+    didPrefillOrganizerCodeRef.current = true;
+    setOrganizerCode(trimmed);
+  }, [sessionOrganizerCode]);
 
   useEffect(() => {
     // Keep session state in sync while typing (session-only; not persisted).
     const trimmed = organizerCode.trim();
-    if (trimmed && trimmed !== sessionOrganizerCode.trim()) {
+    const sessionTrimmed = sessionOrganizerCode.trim();
+    if (trimmed === sessionTrimmed) return;
+    if (trimmed) {
       if (role !== 'organizer') setRole('organizer');
       setSessionOrganizerCode(trimmed);
+      return;
     }
+    setSessionOrganizerCode('');
   }, [
     organizerCode,
     role,
