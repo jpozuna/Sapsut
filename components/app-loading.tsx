@@ -10,7 +10,10 @@ export type AppLoadingProps = {
   fullScreen?: boolean;
 };
 
-export function AppLoading({ label = 'Loading…', fullScreen = true }: AppLoadingProps) {
+export function AppLoading({
+  label = 'Loading…',
+  fullScreen = true,
+}: AppLoadingProps) {
   const colorScheme = useColorScheme();
   const spinnerColor = Colors[colorScheme ?? 'light'].tint;
 
@@ -42,4 +45,3 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
 });
-

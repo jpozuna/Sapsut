@@ -56,4 +56,3 @@ export async function httpJson<T>(
     throw toAppError(err);
   }
 }
-

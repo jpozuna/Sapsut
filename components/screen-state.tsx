@@ -19,7 +19,7 @@ export function ScreenState({
   children,
 }: ScreenStateProps) {
   if (isLoading) return <AppLoading label={loadingLabel} />;
-  if (error) return <AppErrorState error={toAppError(error)} onRetry={onRetry} />;
+  if (error)
+    return <AppErrorState error={toAppError(error)} onRetry={onRetry} />;
   return children;
 }
-

@@ -32,7 +32,8 @@ function getHttpStatus(err: unknown): number | undefined {
   if (typeof status === 'number' && Number.isFinite(status)) return status;
 
   const response = err.response;
-  if (isRecord(response) && typeof response.status === 'number') return response.status;
+  if (isRecord(response) && typeof response.status === 'number')
+    return response.status;
 
   return undefined;
 }
@@ -51,4 +52,3 @@ export function toAppError(err: unknown): AppError {
 
   return { kind: 'unknown', status, message, cause: err };
 }
-

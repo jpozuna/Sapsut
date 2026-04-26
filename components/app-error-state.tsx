@@ -19,7 +19,8 @@ function getDefaultCopy(error: AppError): { title: string; message: string } {
     case 'network':
       return {
         title: 'No connection',
-        message: 'Looks like you’re offline. Check your connection and try again.',
+        message:
+          'Looks like you’re offline. Check your connection and try again.',
       };
     case 'server':
       return {
@@ -48,7 +49,8 @@ export function AppErrorState({
   const message = error.message?.trim() ? error.message : copy.message;
 
   const canGoBack = router.canGoBack();
-  const handleGoBack = onGoBack ?? (canGoBack ? () => router.back() : undefined);
+  const handleGoBack =
+    onGoBack ?? (canGoBack ? () => router.back() : undefined);
   const primaryAction =
     onRetry ?? handleGoBack ?? (() => router.replace('/(tabs)'));
 
@@ -135,4 +137,3 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
 });
-
