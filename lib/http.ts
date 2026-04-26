@@ -1,5 +1,5 @@
 import type { AppError } from '@/lib/app-error';
-import { toAppError } from '@/lib/app-error';
+import { isAppError, toAppError } from '@/lib/app-error';
 
 export type HttpJsonInit = RequestInit & {
   headers?: Record<string, string>;
@@ -53,6 +53,7 @@ export async function httpJson<T>(
 
     return (await res.json()) as T;
   } catch (err) {
+    if (isAppError(err)) throw err;
     throw toAppError(err);
   }
 }

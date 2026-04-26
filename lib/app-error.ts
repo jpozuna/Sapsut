@@ -7,6 +7,15 @@ export type AppError = {
   cause?: unknown;
 };
 
+export function isAppError(err: unknown): err is AppError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'kind' in err &&
+    typeof (err as { kind?: unknown }).kind === 'string'
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -39,6 +48,8 @@ function getHttpStatus(err: unknown): number | undefined {
 }
 
 export function toAppError(err: unknown): AppError {
+  if (isAppError(err)) return err;
+
   const status = getHttpStatus(err);
   const message = getErrorMessage(err);
 

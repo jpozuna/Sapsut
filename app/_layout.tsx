@@ -15,9 +15,10 @@ import {
   JosefinSlab_400Regular,
   JosefinSlab_600SemiBold,
 } from '@expo-google-fonts/josefin-slab';
+import { View } from 'react-native';
 
 import { AppErrorBoundary } from '@/components/app-error-boundary';
-import { AppLoading } from '@/components/app-loading';
+import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -34,7 +35,15 @@ export default function RootLayout() {
   });
 
   if (!fontsLoaded) {
-    return <AppLoading label="Getting things ready…" />;
+    // Avoid ThemedText / custom fonts before they're loaded.
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: Colors.light.background,
+        }}
+      />
+    );
   }
 
   return (
