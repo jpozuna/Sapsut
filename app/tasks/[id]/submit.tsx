@@ -34,9 +34,8 @@ export default function TaskSubmitScreen() {
 
   const [teamId, setTeamId] = useState('');
   const [textAnswer, setTextAnswer] = useState('');
-  const [photoAsset, setPhotoAsset] = useState<ImagePicker.ImagePickerAsset | null>(
-    null,
-  );
+  const [photoAsset, setPhotoAsset] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -53,7 +52,7 @@ export default function TaskSubmitScreen() {
         const tasks = await httpJson<Task[]>(apiUrl('/tasks/'));
         const found =
           Array.isArray(tasks) && taskId
-            ? tasks.find((t) => String(t.id) === taskId) ?? null
+            ? (tasks.find((t) => String(t.id) === taskId) ?? null)
             : null;
         if (mounted) setTask(found);
       } catch (e) {
@@ -270,10 +269,7 @@ export default function TaskSubmitScreen() {
                     pressed ? styles.buttonPressed : null,
                   ]}
                 >
-                  <ThemedText
-                    type="defaultSemiBold"
-                    style={{ color: tint }}
-                  >
+                  <ThemedText type="defaultSemiBold" style={{ color: tint }}>
                     {photoAsset ? 'Replace photo' : 'Pick a photo'}
                   </ThemedText>
                 </Pressable>
@@ -309,7 +305,8 @@ export default function TaskSubmitScreen() {
 
           {submitSuccessId ? (
             <ThemedText style={styles.successText}>
-              Submitted. ID: <ThemedText type="defaultSemiBold">{submitSuccessId}</ThemedText>
+              Submitted. ID:{' '}
+              <ThemedText type="defaultSemiBold">{submitSuccessId}</ThemedText>
             </ThemedText>
           ) : null}
 
