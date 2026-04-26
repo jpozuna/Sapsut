@@ -81,7 +81,8 @@ def approve_review_queue_item(queue_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Queue item is missing claude_score")
 
     rationale = (queue_row.get("claude_rationale") or "Organizer approved").strip() or "Organizer approved"
-    confidence = float(queue_row.get("confidence") or 1.0)
+    queue_confidence = queue_row.get("confidence")
+    confidence = 1.0 if queue_confidence is None else float(queue_confidence)
 
     _finalize_score(
         supabase,

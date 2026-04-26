@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { toAppError } from '@/lib/app-error';
 import { organizerJson } from '@/lib/organizer-api';
 
 type Submission = {
@@ -66,7 +67,7 @@ export default function OrganizerReviewDashboard() {
       );
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load review queue.');
+      setError(toAppError(e).message ?? 'Failed to load review queue.');
     } finally {
       setIsLoading(false);
     }
@@ -96,7 +97,7 @@ export default function OrganizerReviewDashboard() {
         setRows((prev) => prev.filter((r) => r.id !== row.id));
       } catch (e) {
         setError(
-          e instanceof Error ? e.message : 'Approve failed. Please try again.',
+          toAppError(e).message ?? 'Approve failed. Please try again.',
         );
       } finally {
         setBusy(row.id, false);
@@ -110,8 +111,8 @@ export default function OrganizerReviewDashboard() {
       if (!organizerCode.trim()) return;
       const raw = (overrideScores[row.id] ?? '').trim();
       const score = Number(raw);
-      if (!Number.isFinite(score) || score < 0) {
-        setError('Enter a valid non-negative score to override.');
+      if (!Number.isFinite(score) || !Number.isInteger(score) || score < 0) {
+        setError('Enter a valid non-negative whole number to override.');
         return;
       }
 
@@ -130,7 +131,7 @@ export default function OrganizerReviewDashboard() {
         setRows((prev) => prev.filter((r) => r.id !== row.id));
       } catch (e) {
         setError(
-          e instanceof Error ? e.message : 'Override failed. Please try again.',
+          toAppError(e).message ?? 'Override failed. Please try again.',
         );
       } finally {
         setBusy(row.id, false);
