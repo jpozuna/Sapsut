@@ -96,9 +96,7 @@ export default function OrganizerReviewDashboard() {
         );
         setRows((prev) => prev.filter((r) => r.id !== row.id));
       } catch (e) {
-        setError(
-          toAppError(e).message ?? 'Approve failed. Please try again.',
-        );
+        setError(toAppError(e).message ?? 'Approve failed. Please try again.');
       } finally {
         setBusy(row.id, false);
       }
@@ -130,9 +128,7 @@ export default function OrganizerReviewDashboard() {
         );
         setRows((prev) => prev.filter((r) => r.id !== row.id));
       } catch (e) {
-        setError(
-          toAppError(e).message ?? 'Override failed. Please try again.',
-        );
+        setError(toAppError(e).message ?? 'Override failed. Please try again.');
       } finally {
         setBusy(row.id, false);
       }
