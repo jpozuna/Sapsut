@@ -157,9 +157,13 @@ export default function SubmissionConfirmationScreen() {
       >
         <View style={[screenStyles.container, { backgroundColor }]}>
           <View style={styles.content}>
-            <Text style={[textStyles.title, { color: textColor }]}>{title}</Text>
+            <Text style={[textStyles.title, { color: textColor }]}>
+              {title}
+            </Text>
 
-            <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
               Submission ID:{' '}
               <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
                 {submissionId}
@@ -167,18 +171,26 @@ export default function SubmissionConfirmationScreen() {
             </Text>
 
             {status === 'pending' ? (
-              <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
                 Status:{' '}
-                <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
                   processing…
                 </Text>
               </Text>
             ) : null}
 
             {isUnderReview ? (
-              <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
                 Your submission was flagged and is{' '}
-                <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
                   under review
                 </Text>
                 .
@@ -196,18 +208,32 @@ export default function SubmissionConfirmationScreen() {
 
             {isAutoApproved && submission?.score != null ? (
               <View style={styles.resultBox}>
-                <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+                <Text
+                  style={[
+                    textStyles.default,
+                    styles.hint,
+                    { color: textColor },
+                  ]}
+                >
                   Score:{' '}
-                  <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                  <Text
+                    style={[textStyles.defaultSemiBold, { color: textColor }]}
+                  >
                     {String(submission.score)}
                   </Text>
                 </Text>
                 {submission?.rationale?.trim() ? (
                   <Text
-                    style={[textStyles.default, styles.hint, { color: textColor }]}
+                    style={[
+                      textStyles.default,
+                      styles.hint,
+                      { color: textColor },
+                    ]}
                   >
                     Rationale:{' '}
-                    <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                    <Text
+                      style={[textStyles.defaultSemiBold, { color: textColor }]}
+                    >
                       {submission.rationale.trim()}
                     </Text>
                   </Text>
@@ -252,9 +278,17 @@ export default function SubmissionConfirmationScreen() {
                 { borderColor: border, backgroundColor: 'transparent' },
               ]}
             >
-              <Text style={[textStyles.default, styles.pillText, { color: textColor }]}>
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.pillText,
+                  { color: textColor },
+                ]}
+              >
                 Status:{' '}
-                <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
                   {status}
                 </Text>
               </Text>

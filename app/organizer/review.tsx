@@ -149,7 +149,9 @@ export default function OrganizerReviewDashboard() {
             <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
               Submission
             </Text>
-            <Text style={[textStyles.default, styles.meta, { color: textColor }]}>
+            <Text
+              style={[textStyles.default, styles.meta, { color: textColor }]}
+            >
               Queue ID:{' '}
               <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
                 {item.id}
@@ -217,7 +219,9 @@ export default function OrganizerReviewDashboard() {
                   pressed ? styles.buttonPressed : null,
                 ]}
               >
-                <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
                   Override
                 </Text>
               </Pressable>
@@ -228,7 +232,16 @@ export default function OrganizerReviewDashboard() {
         </View>
       );
     },
-    [border, busyById, colors.text, onApprove, onOverride, overrideScores, textColor, tint],
+    [
+      border,
+      busyById,
+      colors.text,
+      onApprove,
+      onOverride,
+      overrideScores,
+      textColor,
+      tint,
+    ],
   );
 
   return (
@@ -236,7 +249,9 @@ export default function OrganizerReviewDashboard() {
       <Stack.Screen options={{ title: 'Organizer Review' }} />
       <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>Review Queue</Text>
+          <Text style={[textStyles.title, { color: textColor }]}>
+            Review Queue
+          </Text>
           <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
             Enter organizer code to load flagged submissions.
           </Text>
@@ -280,7 +295,9 @@ export default function OrganizerReviewDashboard() {
         {isLoading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator color={tint} />
-            <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
               Fetching review queue…
             </Text>
           </View>
@@ -289,7 +306,9 @@ export default function OrganizerReviewDashboard() {
             <Text style={[textStyles.subtitle, { color: textColor }]}>
               Queue clear
             </Text>
-            <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
               No flagged submissions right now.
             </Text>
           </View>

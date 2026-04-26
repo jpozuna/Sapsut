@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { router } from 'expo-router';
 
 import { ScreenState } from '@/components/screen-state';
@@ -49,10 +56,14 @@ export default function SettingsScreen() {
 
   return (
     <ScreenState isLoading={false}>
-      <View style={[screenStyles.container, styles.container, { backgroundColor }]}>
+      <View
+        style={[screenStyles.container, styles.container, { backgroundColor }]}
+      >
         <View style={styles.header}>
           <Text style={[textStyles.title, { color: textColor }]}>Settings</Text>
-          <Text style={[textStyles.default, styles.subtitle, { color: textColor }]}>
+          <Text
+            style={[textStyles.default, styles.subtitle, { color: textColor }]}
+          >
             Current mode: {modeLabel}
           </Text>
         </View>
@@ -108,7 +119,9 @@ export default function SettingsScreen() {
               <Text style={[textStyles.subtitle, { color: textColor }]}>
                 Enter organizer code
               </Text>
-              <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
                 This stays in memory for this session only.
               </Text>
 
@@ -130,7 +143,13 @@ export default function SettingsScreen() {
               />
 
               {error ? (
-                <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
+                <Text
+                  style={[
+                    textStyles.default,
+                    styles.errorText,
+                    { color: tint },
+                  ]}
+                >
                   {error}
                 </Text>
               ) : null}
@@ -144,7 +163,9 @@ export default function SettingsScreen() {
                     pressed ? styles.pressed : null,
                   ]}
                 >
-                  <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                  <Text
+                    style={[textStyles.defaultSemiBold, { color: textColor }]}
+                  >
                     Cancel
                   </Text>
                 </Pressable>
@@ -156,7 +177,9 @@ export default function SettingsScreen() {
                     pressed ? styles.pressed : null,
                   ]}
                 >
-                  <Text style={[textStyles.defaultSemiBold, { color: 'white' }]}>
+                  <Text
+                    style={[textStyles.defaultSemiBold, { color: 'white' }]}
+                  >
                     Continue
                   </Text>
                 </Pressable>
@@ -219,4 +242,3 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
-

@@ -114,7 +114,9 @@ export default function TaskListScreen() {
             <SapsutLogo width={120} height={54} />
           </View>
           <Text style={[textStyles.title, { color: textColor }]}>Tasks</Text>
-          <Text style={[textStyles.default, styles.subtitle, { color: textColor }]}>
+          <Text
+            style={[textStyles.default, styles.subtitle, { color: textColor }]}
+          >
             Pick a task to submit your entry.
           </Text>
         </View>
@@ -144,27 +146,57 @@ export default function TaskListScreen() {
                 ]}
               >
                 <View style={styles.cardHeader}>
-                  <Text style={[textStyles.subtitle, styles.cardTitle, { color: textColor }]}>
+                  <Text
+                    style={[
+                      textStyles.subtitle,
+                      styles.cardTitle,
+                      { color: textColor },
+                    ]}
+                  >
                     {item.title}
                   </Text>
                   <View style={[styles.pill, { borderColor: tint }]}>
-                    <Text style={[textStyles.defaultSemiBold, styles.pillText, { color: tint }]}>
+                    <Text
+                      style={[
+                        textStyles.defaultSemiBold,
+                        styles.pillText,
+                        { color: tint },
+                      ]}
+                    >
                       {item.max_points} pts
                     </Text>
                   </View>
                 </View>
 
                 {item.description?.trim() ? (
-                  <Text style={[textStyles.default, styles.description, { color: textColor }]}>
+                  <Text
+                    style={[
+                      textStyles.default,
+                      styles.description,
+                      { color: textColor },
+                    ]}
+                  >
                     {item.description}
                   </Text>
                 ) : null}
 
                 <View style={styles.metaRow}>
-                  <Text style={[textStyles.defaultSemiBold, styles.metaLabel, { color: textColor }]}>
+                  <Text
+                    style={[
+                      textStyles.defaultSemiBold,
+                      styles.metaLabel,
+                      { color: textColor },
+                    ]}
+                  >
                     Submission:
                   </Text>
-                  <Text style={[textStyles.default, styles.metaValue, { color: textColor }]}>
+                  <Text
+                    style={[
+                      textStyles.default,
+                      styles.metaValue,
+                      { color: textColor },
+                    ]}
+                  >
                     {formatSubmissionType(item.type)}
                   </Text>
                 </View>
@@ -173,10 +205,22 @@ export default function TaskListScreen() {
           }}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={[textStyles.subtitle, styles.emptyTitle, { color: textColor }]}>
+              <Text
+                style={[
+                  textStyles.subtitle,
+                  styles.emptyTitle,
+                  { color: textColor },
+                ]}
+              >
                 No tasks available
               </Text>
-              <Text style={[textStyles.default, styles.emptyMessage, { color: textColor }]}>
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.emptyMessage,
+                  { color: textColor },
+                ]}
+              >
                 Check back later for new hunt tasks.
               </Text>
             </View>

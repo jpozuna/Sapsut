@@ -35,7 +35,9 @@ export function RoleProvider(props: { children: React.ReactNode }) {
     };
   }, [organizerCode, role]);
 
-  return <RoleContext.Provider value={value}>{props.children}</RoleContext.Provider>;
+  return (
+    <RoleContext.Provider value={value}>{props.children}</RoleContext.Provider>
+  );
 }
 
 export function useRole() {
@@ -43,4 +45,3 @@ export function useRole() {
   if (!ctx) throw new Error('useRole must be used within RoleProvider');
   return ctx;
 }
-

@@ -50,4 +50,3 @@ export const textStyles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

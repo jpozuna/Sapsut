@@ -129,8 +129,12 @@ export default function LeaderboardScreen() {
     >
       <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>Leaderboard</Text>
-          <Text style={[textStyles.default, styles.subtitle, { color: textColor }]}>
+          <Text style={[textStyles.title, { color: textColor }]}>
+            Leaderboard
+          </Text>
+          <Text
+            style={[textStyles.default, styles.subtitle, { color: textColor }]}
+          >
             Live team standings (updates automatically).
           </Text>
         </View>
@@ -148,15 +152,33 @@ export default function LeaderboardScreen() {
             return (
               <View style={[styles.row, { borderColor: border }]}>
                 <View style={styles.rowLeft}>
-                  <Text style={[textStyles.defaultSemiBold, styles.rank, { color: textColor }]}>
+                  <Text
+                    style={[
+                      textStyles.defaultSemiBold,
+                      styles.rank,
+                      { color: textColor },
+                    ]}
+                  >
                     {index + 1}
                   </Text>
-                  <Text style={[textStyles.subtitle, styles.teamName, { color: textColor }]}>
+                  <Text
+                    style={[
+                      textStyles.subtitle,
+                      styles.teamName,
+                      { color: textColor },
+                    ]}
+                  >
                     {item.name || 'Unnamed team'}
                   </Text>
                 </View>
 
-                <Text style={[textStyles.defaultSemiBold, styles.score, { color: tint }]}>
+                <Text
+                  style={[
+                    textStyles.defaultSemiBold,
+                    styles.score,
+                    { color: tint },
+                  ]}
+                >
                   {toScore(item)}
                 </Text>
               </View>
@@ -164,10 +186,22 @@ export default function LeaderboardScreen() {
           }}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={[textStyles.subtitle, styles.emptyTitle, { color: textColor }]}>
+              <Text
+                style={[
+                  textStyles.subtitle,
+                  styles.emptyTitle,
+                  { color: textColor },
+                ]}
+              >
                 No teams yet
               </Text>
-              <Text style={[textStyles.default, styles.emptyMessage, { color: textColor }]}>
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.emptyMessage,
+                  { color: textColor },
+                ]}
+              >
                 Once teams join and score points, they’ll show up here.
               </Text>
               <Pressable

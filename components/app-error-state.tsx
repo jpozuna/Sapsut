@@ -58,7 +58,9 @@ export function AppErrorState({
         <Text style={[textStyles.title, styles.title, { color: textColor }]}>
           {title}
         </Text>
-        <Text style={[textStyles.default, styles.message, { color: textColor }]}>
+        <Text
+          style={[textStyles.default, styles.message, { color: textColor }]}
+        >
           {message}
         </Text>
 
@@ -68,7 +70,13 @@ export function AppErrorState({
             onPress={primaryAction}
             style={[styles.primaryButton, { borderColor: tint }]}
           >
-            <Text style={[textStyles.defaultSemiBold, styles.primaryText, { color: tint }]}>
+            <Text
+              style={[
+                textStyles.defaultSemiBold,
+                styles.primaryText,
+                { color: tint },
+              ]}
+            >
               {primaryLabel}
             </Text>
           </TouchableOpacity>
@@ -79,7 +87,13 @@ export function AppErrorState({
               onPress={handleGoBack}
               style={styles.secondaryButton}
             >
-              <Text style={[textStyles.default, styles.secondaryText, { color: textColor }]}>
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.secondaryText,
+                  { color: textColor },
+                ]}
+              >
                 Go back
               </Text>
             </TouchableOpacity>

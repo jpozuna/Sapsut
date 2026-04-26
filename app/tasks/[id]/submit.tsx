@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -253,10 +260,14 @@ export default function TaskSubmitScreen() {
       <Stack.Screen options={{ title: 'Submit' }} />
       <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.content}>
-          <Text style={[textStyles.title, { color: textColor }]}>Submission</Text>
+          <Text style={[textStyles.title, { color: textColor }]}>
+            Submission
+          </Text>
 
           {isLoadingTask ? (
-            <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
               Loading task…
             </Text>
           ) : task ? (
@@ -264,15 +275,21 @@ export default function TaskSubmitScreen() {
               <Text style={[textStyles.subtitle, { color: textColor }]}>
                 {task.title}
               </Text>
-              <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
                 Submission type:{' '}
-                <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
                   {task.type}
                 </Text>
               </Text>
             </View>
           ) : (
-            <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
               Couldn’t load task. (id: {taskId})
             </Text>
           )}
@@ -368,7 +385,9 @@ export default function TaskSubmitScreen() {
                       pressed ? styles.buttonPressed : null,
                     ]}
                   >
-                    <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                    <Text
+                      style={[textStyles.defaultSemiBold, { color: textColor }]}
+                    >
                       Remove
                     </Text>
                   </Pressable>
@@ -376,7 +395,13 @@ export default function TaskSubmitScreen() {
               </View>
               {photoAsset ? (
                 <>
-                  <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+                  <Text
+                    style={[
+                      textStyles.default,
+                      styles.hint,
+                      { color: textColor },
+                    ]}
+                  >
                     Selected: {photoAsset.fileName ?? photoAsset.uri}
                   </Text>
                   <View style={styles.previewFrame}>
@@ -388,21 +413,44 @@ export default function TaskSubmitScreen() {
                     />
                   </View>
                   {photoPath ? (
-                    <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+                    <Text
+                      style={[
+                        textStyles.default,
+                        styles.hint,
+                        { color: textColor },
+                      ]}
+                    >
                       Uploaded path:{' '}
-                      <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                      <Text
+                        style={[
+                          textStyles.defaultSemiBold,
+                          { color: textColor },
+                        ]}
+                      >
                         {photoPath}
                       </Text>
                     </Text>
                   ) : null}
                   {isUploadingPhoto ? (
-                    <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+                    <Text
+                      style={[
+                        textStyles.default,
+                        styles.hint,
+                        { color: textColor },
+                      ]}
+                    >
                       Uploading photo…
                     </Text>
                   ) : null}
                 </>
               ) : (
-                <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+                <Text
+                  style={[
+                    textStyles.default,
+                    styles.hint,
+                    { color: textColor },
+                  ]}
+                >
                   No photo selected.
                 </Text>
               )}
@@ -410,13 +458,21 @@ export default function TaskSubmitScreen() {
           ) : null}
 
           {submitError ? (
-            <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
+            <Text
+              style={[textStyles.default, styles.errorText, { color: tint }]}
+            >
               {submitError}
             </Text>
           ) : null}
 
           {submitSuccessId ? (
-            <Text style={[textStyles.default, styles.successText, { color: textColor }]}>
+            <Text
+              style={[
+                textStyles.default,
+                styles.successText,
+                { color: textColor },
+              ]}
+            >
               Submitted. ID:{' '}
               <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
                 {submitSuccessId}

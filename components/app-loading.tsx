@@ -26,7 +26,9 @@ export function AppLoading({
 
   if (!fullScreen) return content;
 
-  return <View style={[styles.fullScreen, { backgroundColor }]}>{content}</View>;
+  return (
+    <View style={[styles.fullScreen, { backgroundColor }]}>{content}</View>
+  );
 }
 
 const styles = StyleSheet.create({
