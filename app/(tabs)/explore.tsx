@@ -1,13 +1,12 @@
-import { Image } from 'expo-image';
 import { Platform, StyleSheet } from 'react-native';
 
 import { Collapsible } from '@/components/ui/collapsible';
 import { ExternalLink } from '@/components/external-link';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ScreenState } from '@/components/screen-state';
+import { SapsutLogo } from '@/components/sapsut-logo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Fonts } from '@/constants/theme';
 
 export default function TabTwoScreen() {
@@ -16,12 +15,9 @@ export default function TabTwoScreen() {
       <ParallaxScrollView
         headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
         headerImage={
-          <IconSymbol
-            size={310}
-            color="#808080"
-            name="chevron.left.forwardslash.chevron.right"
-            style={styles.headerImage}
-          />
+          <ThemedView style={styles.headerImage}>
+            <SapsutLogo width={220} height={100} />
+          </ThemedView>
         }
       >
         <ThemedView style={styles.titleContainer}>
@@ -71,10 +67,10 @@ export default function TabTwoScreen() {
             <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to
             provide files for different screen densities
           </ThemedText>
-          <Image
-            source={require('@/assets/images/react-logo.png')}
-            style={{ width: 100, height: 100, alignSelf: 'center' }}
-          />
+          <ThemedText>
+            Branding assets live in{' '}
+            <ThemedText type="defaultSemiBold">assets/images</ThemedText>.
+          </ThemedText>
           <ExternalLink href="https://reactnative.dev/docs/images">
             <ThemedText type="link">Learn more</ThemedText>
           </ExternalLink>
@@ -124,9 +120,8 @@ export default function TabTwoScreen() {
 
 const styles = StyleSheet.create({
   headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
+    bottom: -56,
+    left: 14,
     position: 'absolute',
   },
   titleContainer: {
