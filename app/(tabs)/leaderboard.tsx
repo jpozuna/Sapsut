@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { ScreenState } from '@/components/screen-state';
 import { ThemedText } from '@/components/themed-text';
@@ -35,47 +36,68 @@ export default function LeaderboardScreen() {
   const [error, setError] = useState<unknown>(undefined);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inFlightRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchLeaderboard = useCallback(async () => {
-    setError(undefined);
-    const res = await httpJson<LeaderboardResponse>(apiUrl('/leaderboard/'));
-    const list = Array.isArray(res?.teams) ? res.teams : [];
-    setTeams(list);
+    // Prevent overlapping requests (e.g., slow networks vs 5s polling interval).
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
+    // Cancel any previous request (e.g., if user blurs/focuses quickly).
+    if (abortRef.current) abortRef.current.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    try {
+      const res = await httpJson<LeaderboardResponse>(apiUrl('/leaderboard/'), {
+        signal: ac.signal,
+      });
+      const list = Array.isArray(res?.teams) ? res.teams : [];
+      // Only clear an error once we know the request succeeded. Otherwise polling can
+      // briefly hide a real error and make the UI look like "missing data".
+      setError(undefined);
+      setTeams(list);
+    } finally {
+      inFlightRef.current = false;
+    }
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        await fetchLeaderboard();
-      } catch (e) {
-        if (mounted) setError(e);
-      } finally {
-        if (mounted) setIsLoading(false);
-      }
-    })();
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
 
-    return () => {
-      mounted = false;
-    };
-  }, [fetchLeaderboard]);
+      // Initial (or re-focus) load.
+      (async () => {
+        setError(undefined);
+        setIsLoading(true);
+        try {
+          await fetchLeaderboard();
+        } catch (e) {
+          if (mounted) setError(e);
+        } finally {
+          if (mounted) setIsLoading(false);
+        }
+      })();
 
-  useEffect(() => {
-    // Reasonable polling interval for "live" standings without hammering the API.
-    const intervalMs = 5000;
+      // Poll only while this tab is focused.
+      const intervalMs = 5000;
+      pollRef.current = setInterval(() => {
+        fetchLeaderboard().catch(() => {
+          // Keep previous data; error UI is handled by the explicit screen state on first load / retries.
+        });
+      }, intervalMs);
 
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => {
-      fetchLeaderboard().catch(() => {
-        // Keep previous data; error UI is handled by the explicit screen state on first load / retries.
-      });
-    }, intervalMs);
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = null;
-    };
-  }, [fetchLeaderboard]);
+      return () => {
+        mounted = false;
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        if (abortRef.current) abortRef.current.abort();
+        abortRef.current = null;
+        inFlightRef.current = false;
+      };
+    }, [fetchLeaderboard]),
+  );
 
   const sorted = useMemo(() => {
     return [...teams].sort((a, b) => toScore(b) - toScore(a));
