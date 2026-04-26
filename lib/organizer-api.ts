@@ -1,7 +1,9 @@
 import { apiUrl } from '@/lib/api';
 import { httpJson, type HttpJsonInit } from '@/lib/http';
 
-export function organizerHeaders(organizerCode: string): Record<string, string> {
+export function organizerHeaders(
+  organizerCode: string,
+): Record<string, string> {
   return {
     'X-Organizer-Code': organizerCode.trim(),
   };
@@ -23,4 +25,3 @@ export async function organizerJson<T>(
     },
   });
 }
-

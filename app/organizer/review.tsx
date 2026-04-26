@@ -327,11 +327,20 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   meta: { opacity: 0.75 },
   body: { opacity: 0.95, lineHeight: 20 },
   row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  actions: { flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
   button: {
     borderWidth: 1,
     borderRadius: 999,
@@ -349,4 +358,3 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
-
