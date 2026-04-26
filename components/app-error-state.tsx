@@ -1,11 +1,8 @@
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 
 import type { AppError } from '@/lib/app-error';
-import { Colors } from '@/constants/theme';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { textStyles, useAppTheme } from '@/lib/ui';
 
 export type AppErrorStateProps = {
   error: AppError;
@@ -41,8 +38,7 @@ export function AppErrorState({
   onGoBack,
   titleOverride,
 }: AppErrorStateProps) {
-  const theme = useColorScheme() ?? 'light';
-  const tint = Colors[theme].tint;
+  const { textColor, backgroundColor, tint } = useAppTheme();
 
   const copy = getDefaultCopy(error);
   const title = titleOverride ?? copy.title;
@@ -57,12 +53,16 @@ export function AppErrorState({
   const primaryLabel = onRetry ? 'Retry' : handleGoBack ? 'Go back' : 'Go home';
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor }]}>
       <View style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
+        <Text style={[textStyles.title, styles.title, { color: textColor }]}>
           {title}
-        </ThemedText>
-        <ThemedText style={styles.message}>{message}</ThemedText>
+        </Text>
+        <Text
+          style={[textStyles.default, styles.message, { color: textColor }]}
+        >
+          {message}
+        </Text>
 
         <View style={styles.actions}>
           <TouchableOpacity
@@ -70,12 +70,15 @@ export function AppErrorState({
             onPress={primaryAction}
             style={[styles.primaryButton, { borderColor: tint }]}
           >
-            <ThemedText
-              type="defaultSemiBold"
-              style={[styles.primaryText, { color: tint }]}
+            <Text
+              style={[
+                textStyles.defaultSemiBold,
+                styles.primaryText,
+                { color: tint },
+              ]}
             >
               {primaryLabel}
-            </ThemedText>
+            </Text>
           </TouchableOpacity>
 
           {onRetry && handleGoBack ? (
@@ -84,12 +87,20 @@ export function AppErrorState({
               onPress={handleGoBack}
               style={styles.secondaryButton}
             >
-              <ThemedText style={styles.secondaryText}>Go back</ThemedText>
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.secondaryText,
+                  { color: textColor },
+                ]}
+              >
+                Go back
+              </Text>
             </TouchableOpacity>
           ) : null}
         </View>
       </View>
-    </ThemedView>
+    </View>
   );
 }
 

@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 
 import { ScreenState } from '@/components/screen-state';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 
@@ -30,9 +27,7 @@ export default function SubmissionConfirmationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const submissionId = String(id ?? '').trim();
 
-  const theme = useColorScheme() ?? 'light';
-  const tint = Colors[theme].tint;
-  const border = Colors[theme].icon;
+  const { textColor, backgroundColor, tint, border } = useAppTheme();
 
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -160,53 +155,88 @@ export default function SubmissionConfirmationScreen() {
         onRetry={onRetry}
         loadingLabel="Checking submission status…"
       >
-        <ThemedView style={styles.container}>
+        <View style={[screenStyles.container, { backgroundColor }]}>
           <View style={styles.content}>
-            <ThemedText type="title">{title}</ThemedText>
+            <Text style={[textStyles.title, { color: textColor }]}>
+              {title}
+            </Text>
 
-            <ThemedText style={styles.hint}>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
               Submission ID:{' '}
-              <ThemedText type="defaultSemiBold">{submissionId}</ThemedText>
-            </ThemedText>
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                {submissionId}
+              </Text>
+            </Text>
 
             {status === 'pending' ? (
-              <ThemedText style={styles.hint}>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
                 Status:{' '}
-                <ThemedText type="defaultSemiBold">processing…</ThemedText>
-              </ThemedText>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
+                  processing…
+                </Text>
+              </Text>
             ) : null}
 
             {isUnderReview ? (
-              <ThemedText style={styles.hint}>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
                 Your submission was flagged and is{' '}
-                <ThemedText type="defaultSemiBold">under review</ThemedText>.
-              </ThemedText>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
+                  under review
+                </Text>
+                .
+              </Text>
             ) : null}
 
             {isError ? (
-              <ThemedText style={[styles.hint, { color: tint }]}>
+              <Text style={[textStyles.default, styles.hint, { color: tint }]}>
                 We hit an error processing your submission
                 {submission?.rationale?.trim()
                   ? `: ${submission.rationale.trim()}`
                   : '.'}
-              </ThemedText>
+              </Text>
             ) : null}
 
             {isAutoApproved && submission?.score != null ? (
               <View style={styles.resultBox}>
-                <ThemedText style={styles.hint}>
+                <Text
+                  style={[
+                    textStyles.default,
+                    styles.hint,
+                    { color: textColor },
+                  ]}
+                >
                   Score:{' '}
-                  <ThemedText type="defaultSemiBold">
+                  <Text
+                    style={[textStyles.defaultSemiBold, { color: textColor }]}
+                  >
                     {String(submission.score)}
-                  </ThemedText>
-                </ThemedText>
+                  </Text>
+                </Text>
                 {submission?.rationale?.trim() ? (
-                  <ThemedText style={styles.hint}>
+                  <Text
+                    style={[
+                      textStyles.default,
+                      styles.hint,
+                      { color: textColor },
+                    ]}
+                  >
                     Rationale:{' '}
-                    <ThemedText type="defaultSemiBold">
+                    <Text
+                      style={[textStyles.defaultSemiBold, { color: textColor }]}
+                    >
                       {submission.rationale.trim()}
-                    </ThemedText>
-                  </ThemedText>
+                    </Text>
+                  </Text>
                 ) : null}
               </View>
             ) : null}
@@ -220,20 +250,26 @@ export default function SubmissionConfirmationScreen() {
                   pressed ? styles.buttonPressed : null,
                 ]}
               >
-                <ThemedText type="defaultSemiBold" style={{ color: tint }}>
+                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
                   Back to tasks
-                </ThemedText>
+                </Text>
               </Pressable>
             ) : (
-              <ThemedText style={[styles.hint, { opacity: 0.7 }]}>
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.hint,
+                  { color: textColor, opacity: 0.7 },
+                ]}
+              >
                 We’ll update this screen automatically.
-              </ThemedText>
+              </Text>
             )}
 
             {!submissionId ? (
-              <ThemedText style={[styles.hint, { color: tint }]}>
+              <Text style={[textStyles.default, styles.hint, { color: tint }]}>
                 Missing submission id.
-              </ThemedText>
+              </Text>
             ) : null}
 
             <View
@@ -242,22 +278,29 @@ export default function SubmissionConfirmationScreen() {
                 { borderColor: border, backgroundColor: 'transparent' },
               ]}
             >
-              <ThemedText style={styles.pillText}>
-                Status: <ThemedText type="defaultSemiBold">{status}</ThemedText>
-              </ThemedText>
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.pillText,
+                  { color: textColor },
+                ]}
+              >
+                Status:{' '}
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
+                  {status}
+                </Text>
+              </Text>
             </View>
           </View>
-        </ThemedView>
+        </View>
       </ScreenState>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   content: {
     gap: 10,
   },

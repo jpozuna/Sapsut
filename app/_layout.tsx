@@ -20,6 +20,7 @@ import { View } from 'react-native';
 import { AppErrorBoundary } from '@/components/app-error-boundary';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { RoleProvider } from '@/lib/role-context';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -49,14 +50,12 @@ export default function RootLayout() {
   return (
     <AppErrorBoundary>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="modal"
-            options={{ presentation: 'modal', title: 'Modal' }}
-          />
-        </Stack>
-        <StatusBar style="auto" />
+        <RoleProvider>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          </Stack>
+          <StatusBar style="auto" />
+        </RoleProvider>
       </ThemeProvider>
     </AppErrorBoundary>
   );

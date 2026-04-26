@@ -1,9 +1,6 @@
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { textStyles, useAppTheme } from '@/lib/ui';
 
 export type AppLoadingProps = {
   label?: string;
@@ -14,19 +11,24 @@ export function AppLoading({
   label = 'Loading…',
   fullScreen = true,
 }: AppLoadingProps) {
-  const colorScheme = useColorScheme();
-  const spinnerColor = Colors[colorScheme ?? 'light'].tint;
+  const { tint: spinnerColor, textColor, backgroundColor } = useAppTheme();
 
   const content = (
     <View style={styles.content}>
       <ActivityIndicator size="large" color={spinnerColor} />
-      {label ? <ThemedText style={styles.label}>{label}</ThemedText> : null}
+      {label ? (
+        <Text style={[textStyles.default, styles.label, { color: textColor }]}>
+          {label}
+        </Text>
+      ) : null}
     </View>
   );
 
   if (!fullScreen) return content;
 
-  return <ThemedView style={styles.fullScreen}>{content}</ThemedView>;
+  return (
+    <View style={[styles.fullScreen, { backgroundColor }]}>{content}</View>
+  );
 }
 
 const styles = StyleSheet.create({

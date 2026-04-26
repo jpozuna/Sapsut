@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { uploadSubmissionPhoto } from '@/lib/storage';
@@ -26,9 +30,7 @@ type CreateSubmissionResponse = CreateSubmissionOk | CreateSubmissionError;
 
 export default function TaskSubmitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const theme = useColorScheme() ?? 'light';
-  const border = Colors[theme].icon;
-  const tint = Colors[theme].tint;
+  const { colors, textColor, backgroundColor, border, tint } = useAppTheme();
 
   const [task, setTask] = useState<Task | null>(null);
   const [isLoadingTask, setIsLoadingTask] = useState(true);
@@ -256,34 +258,52 @@ export default function TaskSubmitScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Submit' }} />
-      <ThemedView style={styles.container}>
+      <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.content}>
-          <ThemedText type="title">Submission</ThemedText>
+          <Text style={[textStyles.title, { color: textColor }]}>
+            Submission
+          </Text>
 
           {isLoadingTask ? (
-            <ThemedText style={styles.hint}>Loading task…</ThemedText>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
+              Loading task…
+            </Text>
           ) : task ? (
             <View style={styles.taskHeader}>
-              <ThemedText type="subtitle">{task.title}</ThemedText>
-              <ThemedText style={styles.hint}>
+              <Text style={[textStyles.subtitle, { color: textColor }]}>
+                {task.title}
+              </Text>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
                 Submission type:{' '}
-                <ThemedText type="defaultSemiBold">{task.type}</ThemedText>
-              </ThemedText>
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
+                  {task.type}
+                </Text>
+              </Text>
             </View>
           ) : (
-            <ThemedText style={styles.hint}>
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
               Couldn’t load task. (id: {taskId})
-            </ThemedText>
+            </Text>
           )}
 
           {taskError ? (
-            <ThemedText style={[styles.hint, { color: tint }]}>
+            <Text style={[textStyles.default, styles.hint, { color: tint }]}>
               Failed to load task list.
-            </ThemedText>
+            </Text>
           ) : null}
 
           <View style={styles.field}>
-            <ThemedText type="defaultSemiBold">Team ID</ThemedText>
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Team ID
+            </Text>
             <TextInput
               value={teamId}
               onChangeText={setTeamId}
@@ -294,14 +314,16 @@ export default function TaskSubmitScreen() {
               editable={!isSubmitting}
               style={[
                 styles.input,
-                { borderColor: border, color: Colors[theme].text },
+                { borderColor: border, color: colors.text },
               ]}
             />
           </View>
 
           {wantsText ? (
             <View style={styles.field}>
-              <ThemedText type="defaultSemiBold">Text answer</ThemedText>
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                Text answer
+              </Text>
               <TextInput
                 value={textAnswer}
                 onChangeText={setTextAnswer}
@@ -311,7 +333,7 @@ export default function TaskSubmitScreen() {
                 multiline
                 style={[
                   styles.textarea,
-                  { borderColor: border, color: Colors[theme].text },
+                  { borderColor: border, color: colors.text },
                 ]}
               />
             </View>
@@ -319,7 +341,9 @@ export default function TaskSubmitScreen() {
 
           {wantsPhoto ? (
             <View style={styles.field}>
-              <ThemedText type="defaultSemiBold">Photo</ThemedText>
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                Photo
+              </Text>
               <View style={styles.photoRow}>
                 <Pressable
                   onPress={onTakePhoto}
@@ -330,13 +354,13 @@ export default function TaskSubmitScreen() {
                     pressed ? styles.buttonPressed : null,
                   ]}
                 >
-                  <ThemedText type="defaultSemiBold" style={{ color: tint }}>
+                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
                     {cameraAvailable === false
                       ? 'Camera unavailable'
                       : photoAsset
                         ? 'Retake photo'
                         : 'Take photo'}
-                  </ThemedText>
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={onPickPhoto}
@@ -347,9 +371,9 @@ export default function TaskSubmitScreen() {
                     pressed ? styles.buttonPressed : null,
                   ]}
                 >
-                  <ThemedText type="defaultSemiBold" style={{ color: tint }}>
+                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
                     {photoAsset ? 'Pick different' : 'Pick from library'}
-                  </ThemedText>
+                  </Text>
                 </Pressable>
                 {photoAsset ? (
                   <Pressable
@@ -361,15 +385,25 @@ export default function TaskSubmitScreen() {
                       pressed ? styles.buttonPressed : null,
                     ]}
                   >
-                    <ThemedText type="defaultSemiBold">Remove</ThemedText>
+                    <Text
+                      style={[textStyles.defaultSemiBold, { color: textColor }]}
+                    >
+                      Remove
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>
               {photoAsset ? (
                 <>
-                  <ThemedText style={styles.hint}>
+                  <Text
+                    style={[
+                      textStyles.default,
+                      styles.hint,
+                      { color: textColor },
+                    ]}
+                  >
                     Selected: {photoAsset.fileName ?? photoAsset.uri}
-                  </ThemedText>
+                  </Text>
                   <View style={styles.previewFrame}>
                     <Image
                       source={{ uri: photoAsset.uri }}
@@ -379,36 +413,71 @@ export default function TaskSubmitScreen() {
                     />
                   </View>
                   {photoPath ? (
-                    <ThemedText style={styles.hint}>
+                    <Text
+                      style={[
+                        textStyles.default,
+                        styles.hint,
+                        { color: textColor },
+                      ]}
+                    >
                       Uploaded path:{' '}
-                      <ThemedText type="defaultSemiBold">
+                      <Text
+                        style={[
+                          textStyles.defaultSemiBold,
+                          { color: textColor },
+                        ]}
+                      >
                         {photoPath}
-                      </ThemedText>
-                    </ThemedText>
+                      </Text>
+                    </Text>
                   ) : null}
                   {isUploadingPhoto ? (
-                    <ThemedText style={styles.hint}>
+                    <Text
+                      style={[
+                        textStyles.default,
+                        styles.hint,
+                        { color: textColor },
+                      ]}
+                    >
                       Uploading photo…
-                    </ThemedText>
+                    </Text>
                   ) : null}
                 </>
               ) : (
-                <ThemedText style={styles.hint}>No photo selected.</ThemedText>
+                <Text
+                  style={[
+                    textStyles.default,
+                    styles.hint,
+                    { color: textColor },
+                  ]}
+                >
+                  No photo selected.
+                </Text>
               )}
             </View>
           ) : null}
 
           {submitError ? (
-            <ThemedText style={[styles.errorText, { color: tint }]}>
+            <Text
+              style={[textStyles.default, styles.errorText, { color: tint }]}
+            >
               {submitError}
-            </ThemedText>
+            </Text>
           ) : null}
 
           {submitSuccessId ? (
-            <ThemedText style={styles.successText}>
+            <Text
+              style={[
+                textStyles.default,
+                styles.successText,
+                { color: textColor },
+              ]}
+            >
               Submitted. ID:{' '}
-              <ThemedText type="defaultSemiBold">{submitSuccessId}</ThemedText>
-            </ThemedText>
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                {submitSuccessId}
+              </Text>
+            </Text>
           ) : null}
 
           <Pressable
@@ -420,21 +489,17 @@ export default function TaskSubmitScreen() {
               pressed && canSubmit ? styles.submitPressed : null,
             ]}
           >
-            <ThemedText type="defaultSemiBold" style={styles.submitText}>
+            <Text style={[textStyles.defaultSemiBold, styles.submitText]}>
               {isSubmitting ? 'Submitting…' : 'Submit'}
-            </ThemedText>
+            </Text>
           </Pressable>
         </View>
-      </ThemedView>
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   content: {
     gap: 10,
   },
