@@ -35,6 +35,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="leaderboard"
+        options={{
+          title: 'Leaderboard',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="trophy.fill" color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
