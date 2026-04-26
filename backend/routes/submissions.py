@@ -128,7 +128,7 @@ async def create_submission(
     normalized_text_answer = text_answer or ""
     normalized_photo_path = (photo_path or "").strip() or None
     if not normalized_text_answer.strip() and (photo is None) and (normalized_photo_path is None):
-        return {"error": "Submission must include text_answer or photo."}
+        return {"error": "Submission must include text_answer, photo, or photo_path."}
 
     stored_photo_path = normalized_photo_path
     if (stored_photo_path is None) and (photo is not None):

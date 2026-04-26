@@ -64,7 +64,7 @@ export async function uploadSubmissionPhoto(params: {
   const supabase = getSupabaseClient();
   const { error } = await supabase.storage.from(bucket).upload(path, blob, {
     contentType,
-    upsert: true,
+    upsert: false,
   });
   if (error) throw new Error(error.message || 'Upload failed.');
 
