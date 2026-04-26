@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 
@@ -232,6 +232,10 @@ export default function TaskSubmitScreen() {
       const ok = body as CreateSubmissionOk | null;
       if (ok?.submission_id && ok?.status !== 'error') {
         setSubmitSuccessId(ok.submission_id);
+        router.replace({
+          pathname: '/submissions/[id]',
+          params: { id: ok.submission_id },
+        });
       } else {
         setSubmitError(
           ok?.status === 'error'
