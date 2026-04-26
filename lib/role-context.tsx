@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { createContext, useContext, useMemo, useState } from 'react';
 
 export type AppRole = 'participant' | 'organizer';
@@ -13,7 +14,7 @@ type RoleContextValue = {
 
 const RoleContext = createContext<RoleContextValue | null>(null);
 
-export function RoleProvider(props: { children: React.ReactNode }) {
+export function RoleProvider(props: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole>('participant');
   const [organizerCode, setOrganizerCode] = useState('');
 
