@@ -4,15 +4,13 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
+  Text,
   TextInput,
   View,
 } from 'react-native';
 import { Stack } from 'expo-router';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { toAppError } from '@/lib/app-error';
 import { organizerJson } from '@/lib/organizer-api';
 
@@ -41,9 +39,7 @@ type ReviewQueueRow = {
 };
 
 export default function OrganizerReviewDashboard() {
-  const theme = useColorScheme() ?? 'light';
-  const tint = Colors[theme].tint;
-  const border = Colors[theme].icon;
+  const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
 
   const [organizerCode, setOrganizerCode] = useState('');
   const [rows, setRows] = useState<ReviewQueueRow[]>([]);
@@ -150,25 +146,37 @@ export default function OrganizerReviewDashboard() {
       return (
         <View style={[styles.card, { borderColor: border }]}>
           <View style={styles.cardHeader}>
-            <ThemedText type="defaultSemiBold">Submission</ThemedText>
-            <ThemedText style={styles.meta}>
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Submission
+            </Text>
+            <Text style={[textStyles.default, styles.meta, { color: textColor }]}>
               Queue ID:{' '}
-              <ThemedText type="defaultSemiBold">{item.id}</ThemedText>
-            </ThemedText>
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                {item.id}
+              </Text>
+            </Text>
           </View>
 
-          <ThemedText style={styles.body}>{content}</ThemedText>
+          <Text style={[textStyles.default, styles.body, { color: textColor }]}>
+            {content}
+          </Text>
 
           <View style={styles.row}>
-            <ThemedText type="defaultSemiBold">Suggested score:</ThemedText>
-            <ThemedText>{suggested ?? '—'}</ThemedText>
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Suggested score:
+            </Text>
+            <Text style={[textStyles.default, { color: textColor }]}>
+              {suggested ?? '—'}
+            </Text>
           </View>
           <View style={styles.row}>
-            <ThemedText type="defaultSemiBold">Claude rationale:</ThemedText>
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Claude rationale:
+            </Text>
           </View>
-          <ThemedText style={styles.body}>
+          <Text style={[textStyles.default, styles.body, { color: textColor }]}>
             {(item.claude_rationale ?? '').trim() || '—'}
-          </ThemedText>
+          </Text>
 
           <View style={styles.actions}>
             <Pressable
@@ -180,9 +188,9 @@ export default function OrganizerReviewDashboard() {
                 pressed ? styles.buttonPressed : null,
               ]}
             >
-              <ThemedText type="defaultSemiBold" style={{ color: tint }}>
+              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
                 Approve
-              </ThemedText>
+              </Text>
             </Pressable>
 
             <View style={styles.overrideBox}>
@@ -197,7 +205,7 @@ export default function OrganizerReviewDashboard() {
                 editable={!busy}
                 style={[
                   styles.input,
-                  { borderColor: border, color: Colors[theme].text },
+                  { borderColor: border, color: colors.text },
                 ]}
               />
               <Pressable
@@ -209,7 +217,9 @@ export default function OrganizerReviewDashboard() {
                   pressed ? styles.buttonPressed : null,
                 ]}
               >
-                <ThemedText type="defaultSemiBold">Override</ThemedText>
+                <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                  Override
+                </Text>
               </Pressable>
             </View>
 
@@ -218,18 +228,18 @@ export default function OrganizerReviewDashboard() {
         </View>
       );
     },
-    [border, busyById, onApprove, onOverride, overrideScores, theme, tint],
+    [border, busyById, colors.text, onApprove, onOverride, overrideScores, textColor, tint],
   );
 
   return (
     <>
       <Stack.Screen options={{ title: 'Organizer Review' }} />
-      <ThemedView style={styles.container}>
+      <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.header}>
-          <ThemedText type="title">Review Queue</ThemedText>
-          <ThemedText style={styles.hint}>
+          <Text style={[textStyles.title, { color: textColor }]}>Review Queue</Text>
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
             Enter organizer code to load flagged submissions.
-          </ThemedText>
+          </Text>
         </View>
 
         <View style={styles.codeRow}>
@@ -243,7 +253,7 @@ export default function OrganizerReviewDashboard() {
             secureTextEntry
             style={[
               styles.codeInput,
-              { borderColor: border, color: Colors[theme].text },
+              { borderColor: border, color: colors.text },
             ]}
           />
           <Pressable
@@ -255,29 +265,33 @@ export default function OrganizerReviewDashboard() {
               pressed && canLoad && !isLoading ? styles.buttonPressed : null,
             ]}
           >
-            <ThemedText type="defaultSemiBold" style={styles.loadText}>
+            <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
               {isLoading ? 'Loading…' : 'Load'}
-            </ThemedText>
+            </Text>
           </Pressable>
         </View>
 
         {error ? (
-          <ThemedText style={[styles.errorText, { color: tint }]}>
+          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
             {error}
-          </ThemedText>
+          </Text>
         ) : null}
 
         {isLoading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator color={tint} />
-            <ThemedText style={styles.hint}>Fetching review queue…</ThemedText>
+            <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+              Fetching review queue…
+            </Text>
           </View>
         ) : rows.length === 0 && canLoad ? (
           <View style={styles.emptyBox}>
-            <ThemedText type="subtitle">Queue clear</ThemedText>
-            <ThemedText style={styles.hint}>
+            <Text style={[textStyles.subtitle, { color: textColor }]}>
+              Queue clear
+            </Text>
+            <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
               No flagged submissions right now.
-            </ThemedText>
+            </Text>
           </View>
         ) : (
           <FlatList
@@ -289,13 +303,12 @@ export default function OrganizerReviewDashboard() {
             onRefresh={loadQueue}
           />
         )}
-      </ThemedView>
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
   header: { gap: 6, marginBottom: 12 },
   hint: { opacity: 0.85 },
   errorText: { marginTop: 8, opacity: 0.95 },

@@ -1,12 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { ScreenState } from '@/components/screen-state';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 
@@ -26,9 +23,7 @@ function toScore(team: LeaderboardTeam): number {
 }
 
 export default function LeaderboardScreen() {
-  const theme = useColorScheme() ?? 'light';
-  const tint = Colors[theme].tint;
-  const border = Colors[theme].icon;
+  const { textColor, backgroundColor, tint, border } = useAppTheme();
 
   const [teams, setTeams] = useState<LeaderboardTeam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -132,12 +127,12 @@ export default function LeaderboardScreen() {
       onRetry={onRetry}
       loadingLabel="Loading leaderboard…"
     >
-      <ThemedView style={styles.container}>
+      <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.header}>
-          <ThemedText type="title">Leaderboard</ThemedText>
-          <ThemedText style={styles.subtitle}>
+          <Text style={[textStyles.title, { color: textColor }]}>Leaderboard</Text>
+          <Text style={[textStyles.default, styles.subtitle, { color: textColor }]}>
             Live team standings (updates automatically).
-          </ThemedText>
+          </Text>
         </View>
 
         <FlatList
@@ -153,31 +148,28 @@ export default function LeaderboardScreen() {
             return (
               <View style={[styles.row, { borderColor: border }]}>
                 <View style={styles.rowLeft}>
-                  <ThemedText type="defaultSemiBold" style={styles.rank}>
+                  <Text style={[textStyles.defaultSemiBold, styles.rank, { color: textColor }]}>
                     {index + 1}
-                  </ThemedText>
-                  <ThemedText type="subtitle" style={styles.teamName}>
+                  </Text>
+                  <Text style={[textStyles.subtitle, styles.teamName, { color: textColor }]}>
                     {item.name || 'Unnamed team'}
-                  </ThemedText>
+                  </Text>
                 </View>
 
-                <ThemedText
-                  type="defaultSemiBold"
-                  style={[styles.score, { color: tint }]}
-                >
+                <Text style={[textStyles.defaultSemiBold, styles.score, { color: tint }]}>
                   {toScore(item)}
-                </ThemedText>
+                </Text>
               </View>
             );
           }}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <ThemedText type="subtitle" style={styles.emptyTitle}>
+              <Text style={[textStyles.subtitle, styles.emptyTitle, { color: textColor }]}>
                 No teams yet
-              </ThemedText>
-              <ThemedText style={styles.emptyMessage}>
+              </Text>
+              <Text style={[textStyles.default, styles.emptyMessage, { color: textColor }]}>
                 Once teams join and score points, they’ll show up here.
-              </ThemedText>
+              </Text>
               <Pressable
                 onPress={onRetry}
                 style={({ pressed }) => [
@@ -186,23 +178,19 @@ export default function LeaderboardScreen() {
                   pressed ? styles.retryButtonPressed : null,
                 ]}
               >
-                <ThemedText type="defaultSemiBold" style={{ color: tint }}>
+                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
                   Refresh
-                </ThemedText>
+                </Text>
               </Pressable>
             </View>
           }
         />
-      </ThemedView>
+      </View>
     </ScreenState>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   header: {
     gap: 6,
     paddingBottom: 10,

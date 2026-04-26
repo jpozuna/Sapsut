@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { ScreenState } from '@/components/screen-state';
 import { SapsutLogo } from '@/components/sapsut-logo';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 
@@ -44,9 +41,7 @@ function formatSubmissionType(type: Task['type']): string {
 }
 
 export default function TaskListScreen() {
-  const theme = useColorScheme() ?? 'light';
-  const border = Colors[theme].icon;
-  const tint = Colors[theme].tint;
+  const { textColor, backgroundColor, border, tint } = useAppTheme();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -113,15 +108,15 @@ export default function TaskListScreen() {
       onRetry={onRetry}
       loadingLabel="Loading tasks…"
     >
-      <ThemedView style={styles.container}>
+      <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
             <SapsutLogo width={120} height={54} />
           </View>
-          <ThemedText type="title">Tasks</ThemedText>
-          <ThemedText style={styles.subtitle}>
+          <Text style={[textStyles.title, { color: textColor }]}>Tasks</Text>
+          <Text style={[textStyles.default, styles.subtitle, { color: textColor }]}>
             Pick a task to submit your entry.
-          </ThemedText>
+          </Text>
         </View>
 
         <FlatList
@@ -149,61 +144,50 @@ export default function TaskListScreen() {
                 ]}
               >
                 <View style={styles.cardHeader}>
-                  <ThemedText type="subtitle" style={styles.cardTitle}>
+                  <Text style={[textStyles.subtitle, styles.cardTitle, { color: textColor }]}>
                     {item.title}
-                  </ThemedText>
-                  <ThemedView
-                    style={[styles.pill, { borderColor: tint }]}
-                    lightColor="transparent"
-                    darkColor="transparent"
-                  >
-                    <ThemedText
-                      type="defaultSemiBold"
-                      style={[styles.pillText, { color: tint }]}
-                    >
+                  </Text>
+                  <View style={[styles.pill, { borderColor: tint }]}>
+                    <Text style={[textStyles.defaultSemiBold, styles.pillText, { color: tint }]}>
                       {item.max_points} pts
-                    </ThemedText>
-                  </ThemedView>
+                    </Text>
+                  </View>
                 </View>
 
                 {item.description?.trim() ? (
-                  <ThemedText style={styles.description}>
+                  <Text style={[textStyles.default, styles.description, { color: textColor }]}>
                     {item.description}
-                  </ThemedText>
+                  </Text>
                 ) : null}
 
                 <View style={styles.metaRow}>
-                  <ThemedText type="defaultSemiBold" style={styles.metaLabel}>
+                  <Text style={[textStyles.defaultSemiBold, styles.metaLabel, { color: textColor }]}>
                     Submission:
-                  </ThemedText>
-                  <ThemedText style={styles.metaValue}>
+                  </Text>
+                  <Text style={[textStyles.default, styles.metaValue, { color: textColor }]}>
                     {formatSubmissionType(item.type)}
-                  </ThemedText>
+                  </Text>
                 </View>
               </Pressable>
             );
           }}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <ThemedText type="subtitle" style={styles.emptyTitle}>
+              <Text style={[textStyles.subtitle, styles.emptyTitle, { color: textColor }]}>
                 No tasks available
-              </ThemedText>
-              <ThemedText style={styles.emptyMessage}>
+              </Text>
+              <Text style={[textStyles.default, styles.emptyMessage, { color: textColor }]}>
                 Check back later for new hunt tasks.
-              </ThemedText>
+              </Text>
             </View>
           }
         />
-      </ThemedView>
+      </View>
     </ScreenState>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   header: {
     gap: 6,
     paddingBottom: 10,
