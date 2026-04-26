@@ -39,6 +39,8 @@ export default function SubmissionConfirmationScreen() {
   const [error, setError] = useState<unknown>(undefined);
 
   const pollingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollCount = useRef(0);
+  const MAX_POLLS = 20; // ~30s at 1.5s intervals
   const mountedRef = useRef(true);
 
   const status = useMemo(
@@ -65,6 +67,7 @@ export default function SubmissionConfirmationScreen() {
   const onRetry = useCallback(async () => {
     setIsLoading(true);
     setError(undefined);
+    pollCount.current = 0;
     try {
       const data = await fetchOnce();
       if (mountedRef.current) setSubmission(data);
@@ -89,6 +92,7 @@ export default function SubmissionConfirmationScreen() {
     (async () => {
       setIsLoading(true);
       setError(undefined);
+      pollCount.current = 0;
       try {
         const data = await fetchOnce();
         if (!cancelled && mountedRef.current) setSubmission(data);
@@ -119,6 +123,15 @@ export default function SubmissionConfirmationScreen() {
       }
     };
 
+    if (pollCount.current >= MAX_POLLS) {
+      setError(
+        new Error(
+          'Scoring is taking longer than expected. Check back in a moment.',
+        ),
+      );
+      return;
+    }
+    pollCount.current += 1;
     pollingTimer.current = setTimeout(poll, 1500);
     return () => {
       if (pollingTimer.current) clearTimeout(pollingTimer.current);
@@ -126,7 +139,7 @@ export default function SubmissionConfirmationScreen() {
   }, [error, fetchOnce, isLoading, isTerminal, submissionId]);
 
   const onBackToTasks = useCallback(() => {
-    router.replace('/');
+    router.replace('/(tabs)');
   }, []);
 
   const title = useMemo(() => {
