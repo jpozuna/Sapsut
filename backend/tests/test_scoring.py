@@ -110,7 +110,7 @@ class _FakeSupabase:
 
 @pytest.mark.asyncio
 async def test_score_submission_idempotent(monkeypatch):
-    # If a submission is already approved/flagged/rejected, score_submission should no-op early.
+    # If a submission is already in a terminal state, score_submission should no-op early (unless forced).
     fake = _FakeSupabase(status="approved")
     monkeypatch.setattr(scoring, "get_supabase", lambda: fake)
 

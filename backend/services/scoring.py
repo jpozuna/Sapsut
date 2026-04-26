@@ -103,8 +103,14 @@ def _mark_submission_error(
     ai_result: Optional[Dict[str, Any]] = None,
 ):
     payload: Dict[str, Any] = {"status": "error", "rationale": message}
-    if ai_result is not None:
-        payload["ai_result"] = ai_result
+    normalized_ai_result: Dict[str, Any] = {}
+    if isinstance(ai_result, dict):
+        normalized_ai_result.update(ai_result)
+    if "error" not in normalized_ai_result or not str(normalized_ai_result.get("error") or "").strip():
+        normalized_ai_result["error"] = message
+    if "mode" not in normalized_ai_result:
+        normalized_ai_result["mode"] = "error"
+    payload["ai_result"] = normalized_ai_result
     supabase.table("submissions").update(payload).eq("id", submission_id).execute()
 
 
@@ -121,11 +127,12 @@ async def score_submission(
     team_id: str,
     text_answer: Optional[str],
     photo_path: Optional[str],
+    force: bool = False,
 ):
     try:
         supabase = get_supabase()
 
-        # Idempotency: if already finalized, don't rescore (prevents double-counting team totals).
+        # Idempotency: if already terminal, don't rescore unless forced.
         existing = (
             supabase.table("submissions")
             .select("status")
@@ -134,7 +141,8 @@ async def score_submission(
             .execute()
             .data
         )
-        if existing and existing.get("status") in {"approved", "flagged", "rejected"}:
+        terminal_statuses = {"approved", "flagged", "error", "auto_approved", "reviewed"}
+        if (not force) and existing and existing.get("status") in terminal_statuses:
             return
 
         openai_client = _get_openai_client()
@@ -378,7 +386,12 @@ Score this submission. Return JSON only:
     except Exception as e:
         try:
             supabase = get_supabase()
-            _mark_submission_error(supabase, submission_id, f"Scoring exception: {e}")
+            _mark_submission_error(
+                supabase,
+                submission_id,
+                f"Scoring exception: {e}",
+                ai_result={"mode": "exception", "error": str(e)},
+            )
         except Exception:
             pass
         print(f"Scoring error: {e}")
@@ -394,6 +407,21 @@ def _finalize_score(
     status: str,
     ai_result: Optional[Dict[str, Any]] = None,
 ):
+    previous_score: Optional[int] = None
+    try:
+        existing = (
+            supabase.table("submissions")
+            .select("score")
+            .eq("id", submission_id)
+            .single()
+            .execute()
+            .data
+        )
+        if existing and existing.get("score") is not None:
+            previous_score = int(existing["score"])
+    except Exception:
+        previous_score = None
+
     supabase.table("submissions").update(
         {
             "status": status,
@@ -403,11 +431,12 @@ def _finalize_score(
             "ai_result": ai_result,
         }
     ).eq("id", submission_id).execute()
-    
-    # Update team total score
+
+    # Update team total score by delta to avoid double-counting on rescore.
     try:
         team = supabase.table("teams").select("total_score").eq("id", team_id).single().execute().data
-        new_total = (team["total_score"] or 0) + score
-        supabase.table("teams").update({"total_score": new_total}).eq("id", team_id).execute()
+        current_total = int(team.get("total_score") or 0)
+        delta = int(score) - int(previous_score or 0)
+        supabase.table("teams").update({"total_score": current_total + delta}).eq("id", team_id).execute()
     except Exception:
         pass
