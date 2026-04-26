@@ -64,6 +64,14 @@ async function main() {
     height: 400,
   });
 
+  // In-app logo image (used in headers)
+  await svgToPng({
+    inputSvg: inputs.logo,
+    outputPng: out('sapsut-logo-800x360.png'),
+    width: 800,
+    height: 360,
+  });
+
   // Android adaptive icon assets
   await svgToPng({
     inputSvg: inputs.favicon,
