@@ -1,0 +1,17 @@
+node_modules
+.expo
+.expo-shared
+dist
+build
+coverage
+.pytest_cache
+.ruff_cache
+
+# Native folders (if generated)
+ios
+android
+
+# Secrets / env
+.env
+backend/.env
+
