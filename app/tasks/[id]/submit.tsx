@@ -377,11 +377,15 @@ export default function TaskSubmitScreen() {
                   {photoPath ? (
                     <ThemedText style={styles.hint}>
                       Uploaded path:{' '}
-                      <ThemedText type="defaultSemiBold">{photoPath}</ThemedText>
+                      <ThemedText type="defaultSemiBold">
+                        {photoPath}
+                      </ThemedText>
                     </ThemedText>
                   ) : null}
                   {isUploadingPhoto ? (
-                    <ThemedText style={styles.hint}>Uploading photo…</ThemedText>
+                    <ThemedText style={styles.hint}>
+                      Uploading photo…
+                    </ThemedText>
                   ) : null}
                 </>
               ) : (

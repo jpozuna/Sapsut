@@ -8,7 +8,12 @@ function guessImageExt(asset: ImagePicker.ImagePickerAsset): string {
   if (fromName && /^[a-z0-9]{1,6}$/.test(fromName)) return fromName;
 
   const uri = asset.uri ?? '';
-  const fromUri = uri.split('?')[0]?.split('#')[0]?.split('.').pop()?.toLowerCase();
+  const fromUri = uri
+    .split('?')[0]
+    ?.split('#')[0]
+    ?.split('.')
+    .pop()
+    ?.toLowerCase();
   if (fromUri && /^[a-z0-9]{1,6}$/.test(fromUri)) return fromUri;
 
   return 'jpg';
@@ -40,9 +45,10 @@ export async function uploadSubmissionPhoto(params: {
   bucket?: string;
 }): Promise<{ path: string }> {
   const { asset, teamId, taskId } = params;
-  const bucket = (params.bucket ?? process.env.EXPO_PUBLIC_SUPABASE_STORAGE_BUCKET)
-    ?.trim()
-    .slice(0, 200) || 'submission-photos';
+  const bucket =
+    (params.bucket ?? process.env.EXPO_PUBLIC_SUPABASE_STORAGE_BUCKET)
+      ?.trim()
+      .slice(0, 200) || 'submission-photos';
 
   if (!asset?.uri) throw new Error('Missing photo URI.');
   if (!teamId.trim()) throw new Error('Missing team id.');
@@ -64,4 +70,3 @@ export async function uploadSubmissionPhoto(params: {
 
   return { path };
 }
-
