@@ -26,12 +26,20 @@ def list_review_queue() -> Any:
     )
 
 
+class RescoreIn(BaseModel):
+    force: bool = False
+
+
 @router.post("/submissions/{submission_id}/rescore")
-def rescore_submission(submission_id: str, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+def rescore_submission(
+    submission_id: str,
+    payload: RescoreIn,
+    background_tasks: BackgroundTasks,
+) -> Dict[str, Any]:
     supabase = get_supabase()
     row = (
         supabase.table("submissions")
-        .select("id,task_id,team_id,text_answer,photo_url,status")
+        .select("id,task_id,team_id,text_answer,photo_url,status,score,rationale")
         .eq("id", submission_id)
         .maybe_single()
         .execute()
@@ -40,6 +48,24 @@ def rescore_submission(submission_id: str, background_tasks: BackgroundTasks) ->
     if not row:
         raise HTTPException(status_code=404, detail="Submission not found")
 
+    terminal_statuses = {"auto_approved", "reviewed"}
+    if (row.get("status") in terminal_statuses) and (not payload.force):
+        raise HTTPException(
+            status_code=400,
+            detail="Submission is already in a terminal state; set force=true to override.",
+        )
+
+    try:
+        supabase.table("review_queue").insert(
+            {
+                "submission_id": row["id"],
+                "suggested_score": int(row.get("score") or 0),
+                "claude_rationale": (row.get("rationale") or "Rescore requested").strip() or "Rescore requested",
+            }
+        ).execute()
+    except Exception:
+        pass
+
     background_tasks.add_task(
         score_submission,
         row["id"],
@@ -47,8 +73,9 @@ def rescore_submission(submission_id: str, background_tasks: BackgroundTasks) ->
         row["team_id"],
         row.get("text_answer") or "",
         row.get("photo_url"),
+        bool(payload.force),
     )
-    return {"status": "queued", "submission_id": submission_id}
+    return {"status": "queued", "submission_id": submission_id, "force": bool(payload.force)}
 
 
 class CriteriaIn(BaseModel):

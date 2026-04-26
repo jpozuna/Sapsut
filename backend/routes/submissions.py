@@ -1,9 +1,11 @@
 import uuid
 
 import anyio
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from typing import Any, Dict, Optional
 
+from auth.organizer import require_organizer
 from services import get_supabase
 from services.scoring import score_submission
 from services.storage import storage_bucket
@@ -168,6 +170,61 @@ async def create_submission(
     }
     supabase.table("submissions").insert(submission).execute()
     
-    background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, photo_path)
+    background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, photo_path, False)
     
     return {"submission_id": submission_id, "status": "pending"}
+
+
+class RescoreIn(BaseModel):
+    force: bool = False
+
+
+@router.post("/{id}/rescore", dependencies=[Depends(require_organizer)])
+def rescore_submission(
+    id: str,
+    payload: RescoreIn,
+    background_tasks: BackgroundTasks,
+) -> Dict[str, Any]:
+    supabase = get_supabase()
+
+    row = (
+        supabase.table("submissions")
+        .select("id,task_id,team_id,text_answer,photo_url,status,score,rationale,ai_result")
+        .eq("id", id)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    terminal_statuses = {"auto_approved", "reviewed"}
+    if (row.get("status") in terminal_statuses) and (not payload.force):
+        raise HTTPException(
+            status_code=400,
+            detail="Submission is already in a terminal state; set force=true to override.",
+        )
+
+    # Audit trail: `review_queue` requires NOT NULL suggested_score and claude_rationale.
+    try:
+        supabase.table("review_queue").insert(
+            {
+                "submission_id": row["id"],
+                "suggested_score": int(row.get("score") or 0),
+                "claude_rationale": (row.get("rationale") or "Rescore requested").strip() or "Rescore requested",
+            }
+        ).execute()
+    except Exception:
+        # Avoid blocking rescore if audit logging fails (e.g., table missing in dev).
+        pass
+
+    background_tasks.add_task(
+        score_submission,
+        row["id"],
+        row["task_id"],
+        row["team_id"],
+        row.get("text_answer") or "",
+        row.get("photo_url"),
+        bool(payload.force),
+    )
+    return {"status": "queued", "submission_id": row["id"], "force": bool(payload.force)}
