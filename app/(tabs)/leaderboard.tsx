@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenState } from '@/components/screen-state';
+import { SafeScreen } from '@/components/safe-screen';
 import { AppButton, AppCard } from '@/components/ui';
-import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
+import { textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 
@@ -26,7 +26,6 @@ function toScore(team: LeaderboardTeam): number {
 
 export default function LeaderboardScreen() {
   const { textColor, backgroundColor, tint } = useAppTheme();
-  const insets = useSafeAreaInsets();
 
   const [teams, setTeams] = useState<LeaderboardTeam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -130,8 +129,8 @@ export default function LeaderboardScreen() {
       onRetry={onRetry}
       loadingLabel="Loading leaderboard…"
     >
-      <View style={[screenStyles.container, { backgroundColor }]}>
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
+      <SafeScreen backgroundColor={backgroundColor}>
+        <View style={styles.header}>
           <Text style={[textStyles.title, { color: textColor }]}>
             Leaderboard
           </Text>
@@ -218,7 +217,7 @@ export default function LeaderboardScreen() {
             </View>
           }
         />
-      </View>
+      </SafeScreen>
     </ScreenState>
   );
 }

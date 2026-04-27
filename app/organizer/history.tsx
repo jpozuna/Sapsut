@@ -11,10 +11,10 @@ import {
 import { router, Stack } from 'expo-router';
 
 import { SafeScreen } from '@/components/safe-screen';
-import { textStyles, useAppTheme } from '@/lib/ui';
 import { toAppError } from '@/lib/app-error';
 import { organizerJson } from '@/lib/organizer-api';
 import { useRole } from '@/lib/role-context';
+import { textStyles, useAppTheme } from '@/lib/ui';
 
 type Submission = {
   id: string;
@@ -30,28 +30,21 @@ type Submission = {
   created_at: string | null;
 };
 
-type ReviewQueueRow = {
+type ReviewHistoryRow = {
   id: string;
+  queue_id: string | null;
   submission_id: string;
-  claude_score: number | null;
-  confidence: number | null;
-  claude_rationale: string | null;
+  decision: 'approve' | 'override' | string;
+  final_score: number | null;
+  final_rationale: string | null;
+  suggested_score: number | null;
+  suggested_rationale: string | null;
   created_at: string | null;
   submission?: Submission | null;
 };
 
-export default function OrganizerReviewDashboard() {
+export default function OrganizerHistoryScreen() {
   const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
-  const goToCreate = useCallback(() => {
-    // keep organizer code in session via RoleContext
-    // navigation only; API calls still require entering/using the code field
-    // (organizer code is prefilled on arrival)
-    router.push('/organizer/create-task');
-  }, []);
-  const goToHistory = useCallback(() => {
-    router.push('/organizer/history');
-  }, []);
-
   const {
     role,
     organizerCode: sessionOrganizerCode,
@@ -60,13 +53,9 @@ export default function OrganizerReviewDashboard() {
   } = useRole();
 
   const [organizerCode, setOrganizerCode] = useState('');
-  const [rows, setRows] = useState<ReviewQueueRow[]>([]);
+  const [rows, setRows] = useState<ReviewHistoryRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [overrideScores, setOverrideScores] = useState<Record<string, string>>(
-    {},
-  );
-  const [busyById, setBusyById] = useState<Record<string, boolean>>({});
 
   const canLoad = useMemo(() => Boolean(organizerCode.trim()), [organizerCode]);
   const didPrefillOrganizerCodeRef = useRef(false);
@@ -81,7 +70,6 @@ export default function OrganizerReviewDashboard() {
   }, [sessionOrganizerCode]);
 
   useEffect(() => {
-    // Keep session state in sync while typing (session-only; not persisted).
     const trimmed = organizerCode.trim();
     const sessionTrimmed = sessionOrganizerCode.trim();
     if (trimmed === sessionTrimmed) return;
@@ -99,119 +87,61 @@ export default function OrganizerReviewDashboard() {
     setSessionOrganizerCode,
   ]);
 
-  const loadQueue = useCallback(async () => {
+  const loadHistory = useCallback(async () => {
     if (!organizerCode.trim()) return;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await organizerJson<ReviewQueueRow[]>(
-        '/organizer/review-queue',
+      const data = await organizerJson<ReviewHistoryRow[]>(
+        '/organizer/review-history?limit=100',
         organizerCode,
       );
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
-      setError(toAppError(e).message ?? 'Failed to load review queue.');
+      setError(toAppError(e).message ?? 'Failed to load review history.');
     } finally {
       setIsLoading(false);
     }
   }, [organizerCode]);
 
   useEffect(() => {
-    // Don’t auto-fire without the code; wait for user input.
     setRows([]);
     setError(null);
   }, [organizerCode]);
 
   useEffect(() => {
-    // Smooth UX: if we arrive with a session code, auto-load once.
     if (!didAutoLoadRef.current && canLoad) {
       didAutoLoadRef.current = true;
-      loadQueue().catch(() => {
-        // Screen shows error state already.
-      });
+      loadHistory().catch(() => {});
     }
-  }, [canLoad, loadQueue]);
+  }, [canLoad, loadHistory]);
 
-  const setBusy = useCallback((id: string, v: boolean) => {
-    setBusyById((prev) => ({ ...prev, [id]: v }));
-  }, []);
-
-  const onApprove = useCallback(
-    async (row: ReviewQueueRow) => {
-      if (!organizerCode.trim()) return;
-      setBusy(row.id, true);
-      setError(null);
-      try {
-        await organizerJson(
-          `/organizer/review-queue/${row.id}/approve`,
-          organizerCode,
-          { method: 'POST' },
-        );
-        setRows((prev) => prev.filter((r) => r.id !== row.id));
-      } catch (e) {
-        setError(toAppError(e).message ?? 'Approve failed. Please try again.');
-      } finally {
-        setBusy(row.id, false);
-      }
-    },
-    [organizerCode, setBusy],
+  const onGoToCreate = useCallback(
+    () => router.push('/organizer/create-task'),
+    [],
   );
-
-  const onOverride = useCallback(
-    async (row: ReviewQueueRow) => {
-      if (!organizerCode.trim()) return;
-      const raw = (overrideScores[row.id] ?? '').trim();
-      const score = Number(raw);
-      if (!Number.isFinite(score) || !Number.isInteger(score) || score < 0) {
-        setError('Enter a valid non-negative whole number to override.');
-        return;
-      }
-
-      setBusy(row.id, true);
-      setError(null);
-      try {
-        await organizerJson(
-          `/organizer/review-queue/${row.id}/override`,
-          organizerCode,
-          {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ score }),
-          },
-        );
-        setRows((prev) => prev.filter((r) => r.id !== row.id));
-      } catch (e) {
-        setError(toAppError(e).message ?? 'Override failed. Please try again.');
-      } finally {
-        setBusy(row.id, false);
-      }
-    },
-    [organizerCode, overrideScores, setBusy],
-  );
+  const onGoToReview = useCallback(() => router.push('/organizer/review'), []);
 
   const renderItem = useCallback(
-    ({ item }: { item: ReviewQueueRow }) => {
+    ({ item }: { item: ReviewHistoryRow }) => {
       const s = item.submission ?? null;
       const content =
         (s?.gpt4o_description ?? '').trim() ||
         (s?.text_answer ?? '').trim() ||
         '(No submission content)';
 
-      const busy = Boolean(busyById[item.id]);
-      const suggested = item.claude_score;
-
       return (
         <View style={[styles.card, { borderColor: border }]}>
           <View style={styles.cardHeader}>
             <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Submission
+              {String(item.decision || 'decision').toUpperCase()}
             </Text>
             <Text
               style={[textStyles.default, styles.meta, { color: textColor }]}
             >
-              Queue ID:{' '}
+              Submission:{' '}
               <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {item.id}
+                {item.submission_id}
               </Text>
             </Text>
           </View>
@@ -222,96 +152,41 @@ export default function OrganizerReviewDashboard() {
 
           <View style={styles.row}>
             <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Suggested score:
+              Final score:
             </Text>
             <Text style={[textStyles.default, { color: textColor }]}>
-              {suggested ?? '—'}
-            </Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Claude rationale:
+              {item.final_score ?? '—'}
             </Text>
           </View>
           <Text style={[textStyles.default, styles.body, { color: textColor }]}>
-            {(item.claude_rationale ?? '').trim() || '—'}
+            {(item.final_rationale ?? '').trim() || '—'}
           </Text>
 
-          <View style={styles.actions}>
-            <Pressable
-              onPress={() => onApprove(item)}
-              disabled={busy || suggested === null || suggested === undefined}
-              style={({ pressed }) => [
-                styles.button,
-                { borderColor: tint },
-                pressed ? styles.buttonPressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Approve
-              </Text>
-            </Pressable>
-
-            <View style={styles.overrideBox}>
-              <TextInput
-                value={overrideScores[item.id] ?? ''}
-                onChangeText={(t) =>
-                  setOverrideScores((prev) => ({ ...prev, [item.id]: t }))
-                }
-                placeholder="Custom score"
-                placeholderTextColor={border}
-                keyboardType="number-pad"
-                editable={!busy}
-                style={[
-                  styles.input,
-                  { borderColor: border, color: colors.text },
-                ]}
-              />
-              <Pressable
-                onPress={() => onOverride(item)}
-                disabled={busy}
-                style={({ pressed }) => [
-                  styles.button,
-                  { borderColor: border },
-                  pressed ? styles.buttonPressed : null,
-                ]}
-              >
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  Override
-                </Text>
-              </Pressable>
-            </View>
-
-            {busy ? <ActivityIndicator color={tint} /> : null}
+          <View style={styles.row}>
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Suggested:
+            </Text>
+            <Text style={[textStyles.default, { color: textColor }]}>
+              {item.suggested_score ?? '—'}
+            </Text>
           </View>
         </View>
       );
     },
-    [
-      border,
-      busyById,
-      colors.text,
-      onApprove,
-      onOverride,
-      overrideScores,
-      textColor,
-      tint,
-    ],
+    [border, textColor],
   );
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Organizer Review' }} />
+      <Stack.Screen options={{ title: 'Organizer History' }} />
       <SafeScreen backgroundColor={backgroundColor}>
         <View style={styles.navRow}>
           <Pressable
-            onPress={goToCreate}
+            onPress={onGoToCreate}
             style={({ pressed }) => [
               styles.navPill,
               { borderColor: border },
-              pressed ? styles.buttonPressed : null,
+              pressed ? styles.pressed : null,
             ]}
           >
             <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
@@ -319,36 +194,35 @@ export default function OrganizerReviewDashboard() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => {}}
+            onPress={onGoToReview}
             style={({ pressed }) => [
               styles.navPill,
-              { borderColor: tint, backgroundColor: tint },
-              pressed ? styles.buttonPressed : null,
+              { borderColor: border },
+              pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
               Review
             </Text>
           </Pressable>
           <Pressable
-            onPress={goToHistory}
+            onPress={() => {}}
             style={({ pressed }) => [
               styles.navPill,
-              { borderColor: border },
-              pressed ? styles.buttonPressed : null,
+              { borderColor: tint, backgroundColor: tint },
+              pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
               History
             </Text>
           </Pressable>
         </View>
+
         <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>
-            Review Queue
-          </Text>
+          <Text style={[textStyles.title, { color: textColor }]}>History</Text>
           <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Enter organizer code to load flagged submissions.
+            Decisions made by organizers (approve/override).
           </Text>
         </View>
 
@@ -367,12 +241,12 @@ export default function OrganizerReviewDashboard() {
             ]}
           />
           <Pressable
-            onPress={loadQueue}
+            onPress={loadHistory}
             disabled={!canLoad || isLoading}
             style={({ pressed }) => [
               styles.loadButton,
               { backgroundColor: canLoad && !isLoading ? tint : border },
-              pressed && canLoad && !isLoading ? styles.buttonPressed : null,
+              pressed && canLoad && !isLoading ? styles.pressed : null,
             ]}
           >
             <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
@@ -393,18 +267,18 @@ export default function OrganizerReviewDashboard() {
             <Text
               style={[textStyles.default, styles.hint, { color: textColor }]}
             >
-              Fetching review queue…
+              Fetching history…
             </Text>
           </View>
         ) : rows.length === 0 && canLoad ? (
           <View style={styles.emptyBox}>
             <Text style={[textStyles.subtitle, { color: textColor }]}>
-              Queue clear
+              No history yet
             </Text>
             <Text
               style={[textStyles.default, styles.hint, { color: textColor }]}
             >
-              No flagged submissions right now.
+              Approve/override something to populate this.
             </Text>
           </View>
         ) : (
@@ -414,7 +288,7 @@ export default function OrganizerReviewDashboard() {
             renderItem={renderItem}
             contentContainerStyle={styles.list}
             refreshing={isLoading}
-            onRefresh={loadQueue}
+            onRefresh={loadHistory}
           />
         )}
       </SafeScreen>
@@ -431,6 +305,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   navActiveText: { color: 'white' },
+  pressed: { opacity: 0.9, transform: [{ scale: 0.995 }] },
   header: { gap: 6, marginBottom: 12 },
   hint: { opacity: 0.85 },
   errorText: { marginTop: 8, opacity: 0.95 },
@@ -467,26 +342,4 @@ const styles = StyleSheet.create({
   meta: { opacity: 0.75 },
   body: { opacity: 0.95, lineHeight: 20 },
   row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  actions: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  button: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  buttonPressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
-  overrideBox: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  input: {
-    minWidth: 120,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
 });

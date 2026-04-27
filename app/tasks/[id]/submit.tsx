@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 
@@ -29,12 +30,22 @@ type CreateSubmissionOk = { submission_id: string; status: string };
 type CreateSubmissionError = { error: string; existing_submission_id?: string };
 type CreateSubmissionResponse = CreateSubmissionOk | CreateSubmissionError;
 
+type DocAsset = DocumentPicker.DocumentPickerAsset;
+
 function displayAssetLabel(asset: ImagePicker.ImagePickerAsset): string {
   const name = asset.fileName?.trim();
   if (name) return name;
   const uri = asset.uri ?? '';
   const last = uri.split('?')[0]?.split('#')[0]?.split('/').pop()?.trim();
   return last || 'selected photo';
+}
+
+function displayDocLabel(asset: DocAsset): string {
+  const name = asset.name?.trim();
+  if (name) return name;
+  const uri = asset.uri ?? '';
+  const last = uri.split('?')[0]?.split('#')[0]?.split('/').pop()?.trim();
+  return last || 'selected file';
 }
 
 export default function TaskSubmitScreen() {
@@ -47,6 +58,7 @@ export default function TaskSubmitScreen() {
 
   const [teamId, setTeamId] = useState('');
   const [textAnswer, setTextAnswer] = useState('');
+  const [docAsset, setDocAsset] = useState<DocAsset | null>(null);
   const [photoAsset, setPhotoAsset] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
   const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(null);
@@ -104,27 +116,65 @@ export default function TaskSubmitScreen() {
   const wantsText = submissionType === 'text' || submissionType === 'combo';
   const wantsPhoto = submissionType === 'photo' || submissionType === 'combo';
 
+  const hasText = Boolean(textAnswer.trim());
+  const hasDoc = Boolean(docAsset?.uri);
+  const hasBothTextAndDoc = hasText && hasDoc;
+
   const canSubmit = useMemo(() => {
     if (!taskId.trim()) return false;
     if (!teamId.trim()) return false;
     if (!submissionType) return false;
     if (isSubmitting) return false;
+    if (hasBothTextAndDoc) return false;
     if (wantsText && wantsPhoto) {
-      return Boolean(textAnswer.trim() || photoAsset);
+      return Boolean(hasText || hasDoc || photoAsset);
     }
-    if (wantsText) return Boolean(textAnswer.trim());
+    if (wantsText) return Boolean(hasText || hasDoc);
     if (wantsPhoto) return Boolean(photoAsset);
     return false;
   }, [
+    hasBothTextAndDoc,
+    hasDoc,
+    hasText,
     isSubmitting,
     photoAsset,
     submissionType,
     taskId,
     teamId,
-    textAnswer,
     wantsPhoto,
     wantsText,
   ]);
+
+  const onPickDoc = useCallback(async () => {
+    setSubmitError(null);
+    setSubmitSuccessId(null);
+
+    const res = await DocumentPicker.getDocumentAsync({
+      multiple: false,
+      type: [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ],
+      copyToCacheDirectory: true,
+    });
+    if (res.canceled) return;
+    const asset = res.assets?.[0] ?? null;
+    if (!asset) return;
+
+    const maxBytes = 15 * 1024 * 1024;
+    if (typeof asset.size === 'number' && asset.size > maxBytes) {
+      setSubmitError('File must be 15 MB or smaller.');
+      return;
+    }
+
+    // Enforce only one input method.
+    setTextAnswer('');
+    setDocAsset(asset);
+  }, []);
+
+  const onRemoveDoc = useCallback(() => {
+    setDocAsset(null);
+  }, []);
 
   const onPickPhoto = useCallback(async () => {
     setSubmitError(null);
@@ -191,8 +241,18 @@ export default function TaskSubmitScreen() {
       fd.append('task_id', taskId);
       fd.append('team_id', teamId.trim());
 
-      if (textAnswer.trim()) {
+      if (textAnswer.trim() && !docAsset?.uri) {
         fd.append('text_answer', textAnswer);
+      }
+
+      if (docAsset?.uri) {
+        const name = docAsset.name?.trim() || `rubric-${taskId}-${Date.now()}`;
+        const type = docAsset.mimeType?.trim() || 'application/octet-stream';
+        fd.append('rubric_file', {
+          uri: docAsset.uri,
+          name,
+          type,
+        } as unknown as Blob);
       }
 
       if (photoAsset?.uri) {
@@ -268,7 +328,7 @@ export default function TaskSubmitScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [canSubmit, photoAsset, taskId, teamId, textAnswer]);
+  }, [canSubmit, docAsset, photoAsset, taskId, teamId, textAnswer]);
 
   const onBackToTasks = useCallback(() => {
     router.replace('/(tabs)');
@@ -378,20 +438,75 @@ export default function TaskSubmitScreen() {
           {wantsText ? (
             <View style={styles.field}>
               <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Text answer
+                Text answer (or upload a PDF/DOCX)
               </Text>
               <TextInput
                 value={textAnswer}
-                onChangeText={setTextAnswer}
+                onChangeText={(t) => {
+                  setTextAnswer(t);
+                  if (t.trim()) setDocAsset(null);
+                }}
                 placeholder="Type your answer…"
                 placeholderTextColor={border}
-                editable={!isSubmitting}
+                editable={!isSubmitting && !docAsset}
                 multiline
                 style={[
                   styles.textarea,
                   { borderColor: border, color: colors.text },
                 ]}
               />
+              <View style={styles.photoRow}>
+                <Pressable
+                  onPress={onPickDoc}
+                  disabled={isSubmitting || Boolean(textAnswer.trim())}
+                  style={({ pressed }) => [
+                    styles.button,
+                    { borderColor: tint },
+                    pressed ? styles.buttonPressed : null,
+                  ]}
+                >
+                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                    {docAsset ? 'Pick different file' : 'Upload PDF/DOCX'}
+                  </Text>
+                </Pressable>
+                {docAsset ? (
+                  <Pressable
+                    onPress={onRemoveDoc}
+                    disabled={isSubmitting}
+                    style={({ pressed }) => [
+                      styles.button,
+                      { borderColor: border },
+                      pressed ? styles.buttonPressed : null,
+                    ]}
+                  >
+                    <Text
+                      style={[textStyles.defaultSemiBold, { color: textColor }]}
+                    >
+                      Remove file
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {docAsset ? (
+                <Text
+                  style={[
+                    textStyles.default,
+                    styles.hint,
+                    { color: textColor },
+                  ]}
+                  numberOfLines={2}
+                  ellipsizeMode="middle"
+                >
+                  Selected file: {displayDocLabel(docAsset)}
+                </Text>
+              ) : null}
+              {hasBothTextAndDoc ? (
+                <Text
+                  style={[textStyles.default, styles.hint, { color: tint }]}
+                >
+                  Choose only one: text or file.
+                </Text>
+              ) : null}
             </View>
           ) : null}
 

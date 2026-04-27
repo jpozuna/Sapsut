@@ -5,6 +5,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 
+from io import BytesIO
+
 from postgrest.exceptions import APIError
 
 from auth.organizer import require_organizer
@@ -34,6 +36,52 @@ def _extract_signed_url(resp: Any) -> Optional[str]:
     return None
 
 
+def _is_allowed_rubric_upload(filename: str, content_type: str) -> Optional[str]:
+    """
+    Returns 'pdf' or 'docx' if allowed, else None.
+    Best-effort: checks both filename extension and MIME type.
+    """
+    fn = (filename or "").lower().strip()
+    ct = (content_type or "").lower().strip()
+
+    if fn.endswith(".pdf") or ct == "application/pdf":
+        return "pdf"
+
+    docx_mimes = {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        # Some clients mislabel; keep a small allowance.
+        "application/octet-stream",
+    }
+    if fn.endswith(".docx") or ct in docx_mimes:
+        return "docx"
+
+    return None
+
+
+def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    parts = []
+    for page in reader.pages:
+        try:
+            parts.append(page.extract_text() or "")
+        except Exception:
+            parts.append("")
+    return "\n".join(parts).strip()
+
+
+def _extract_text_from_docx(docx_bytes: bytes) -> str:
+    from docx import Document
+
+    doc = Document(BytesIO(docx_bytes))
+    parts = []
+    for p in doc.paragraphs:
+        if p.text:
+            parts.append(p.text)
+    return "\n".join(parts).strip()
+
+
 @router.get("/{id}")
 async def get_submission(id: str) -> Dict[str, Any]:
     supabase = get_supabase()
@@ -60,6 +108,18 @@ async def get_submission(id: str) -> Dict[str, Any]:
             signed_url = _extract_signed_url(signed)
             if signed_url:
                 submission["photo_signed_url"] = signed_url
+        except Exception:
+            pass
+
+    file_path = submission.get("file_url")
+    if file_path:
+        try:
+            signed = await anyio.to_thread.run_sync(
+                lambda: supabase.storage.from_(storage_bucket()).create_signed_url(file_path, 600)
+            )
+            signed_url = _extract_signed_url(signed)
+            if signed_url:
+                submission["file_signed_url"] = signed_url
         except Exception:
             pass
 
@@ -93,6 +153,7 @@ async def create_submission(
     text_answer: str = Form(None),
     photo_path: str = Form(None),
     photo: UploadFile = File(None),
+    rubric_file: UploadFile = File(None),
 ):
     # Validate ids early; PostgREST returns a 500 if we send non-UUID text into uuid columns.
     try:
@@ -111,16 +172,18 @@ async def create_submission(
     try:
         task = (
             supabase.table("tasks")
-            .select("id,allow_multiple_submissions")
+            .select("id,type,allow_multiple_submissions")
             .eq("id", task_id)
             .single()
             .execute()
             .data
         )
         allow_multiple = bool(task.get("allow_multiple_submissions", False))
+        task_type = (task.get("type") or "").strip()
     except Exception:
         # If the column doesn't exist yet (migration not applied), default to single-submission behavior.
         allow_multiple = False
+        task_type = ""
 
     if not allow_multiple:
         existing = (
@@ -140,8 +203,71 @@ async def create_submission(
 
     normalized_text_answer = text_answer or ""
     normalized_photo_path = (photo_path or "").strip() or None
-    if not normalized_text_answer.strip() and (photo is None) and (normalized_photo_path is None):
-        return {"error": "Submission must include text_answer, photo, or photo_path."}
+
+    has_text = bool(normalized_text_answer.strip())
+    has_rubric_file = rubric_file is not None
+    if has_text and has_rubric_file:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide exactly one input method: either text_answer or rubric_file.",
+        )
+
+    wants_text = task_type in {"text", "combo"}
+    wants_photo = task_type in {"photo", "combo"}
+
+    # Enforce at least one valid input.
+    if wants_text and not wants_photo:
+        if not has_text and not has_rubric_file:
+            return {"error": "Submission must include text_answer or rubric_file."}
+    else:
+        if (
+            (not has_text)
+            and (not has_rubric_file)
+            and (photo is None)
+            and (normalized_photo_path is None)
+        ):
+            return {"error": "Submission must include text_answer, rubric_file, photo, or photo_path."}
+
+    stored_file_path: Optional[str] = None
+    if has_rubric_file:
+        # Read bytes during request lifecycle.
+        file_bytes = await rubric_file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="rubric_file was empty.")
+        max_bytes = 15 * 1024 * 1024
+        if len(file_bytes) > max_bytes:
+            raise HTTPException(status_code=400, detail="rubric_file must be <= 15 MB.")
+
+        kind = _is_allowed_rubric_upload(rubric_file.filename or "", rubric_file.content_type or "")
+        if kind not in {"pdf", "docx"}:
+            raise HTTPException(status_code=400, detail="rubric_file must be a .pdf or .docx.")
+
+        try:
+            extracted = (
+                _extract_text_from_pdf(file_bytes) if kind == "pdf" else _extract_text_from_docx(file_bytes)
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse rubric_file: {e}")
+
+        if not extracted.strip():
+            raise HTTPException(status_code=400, detail="rubric_file contained no extractable text.")
+
+        normalized_text_answer = extracted
+
+        stored_file_path = f"{team_id}/{task_id}/{submission_id}-rubric.{kind}"
+        try:
+            await anyio.to_thread.run_sync(
+                lambda: supabase.storage.from_(storage_bucket()).upload(
+                    stored_file_path,
+                    file_bytes,
+                    file_options={
+                        "content-type": (rubric_file.content_type or "application/octet-stream").strip(),
+                        "upsert": "true",
+                    },
+                )
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"rubric_file upload failed: {e}")
 
     stored_photo_path = normalized_photo_path
     if (stored_photo_path is None) and (photo is not None):
@@ -186,18 +312,32 @@ async def create_submission(
         "text_answer": normalized_text_answer,
         # Persist object path in existing schema column name.
         "photo_url": stored_photo_path,
+        "file_url": stored_file_path,
         "status": "pending"
     }
     try:
         supabase.table("submissions").insert(submission).execute()
     except APIError as e:
-        # Convert common PostgREST errors into a client-friendly 4xx.
+        # Backwards compatible: if file_url column doesn't exist yet, retry without it.
         msg = ""
         try:
             msg = (e.args[0] or {}).get("message") or ""
         except Exception:
             msg = ""
-        raise HTTPException(status_code=400, detail=msg or "Invalid submission payload")
+        if stored_file_path and ("file_url" in msg or "column" in msg and "file_url" in msg):
+            submission.pop("file_url", None)
+            try:
+                supabase.table("submissions").insert(submission).execute()
+            except APIError as e2:
+                msg2 = ""
+                try:
+                    msg2 = (e2.args[0] or {}).get("message") or ""
+                except Exception:
+                    msg2 = ""
+                raise HTTPException(status_code=400, detail=msg2 or "Invalid submission payload")
+        else:
+        # Convert common PostgREST errors into a client-friendly 4xx.
+            raise HTTPException(status_code=400, detail=msg or "Invalid submission payload")
     
     background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, stored_photo_path, False)
     

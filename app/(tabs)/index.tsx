@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { ScreenState } from '@/components/screen-state';
+import { SafeScreen } from '@/components/safe-screen';
 import { SapsutLogo } from '@/components/sapsut-logo';
 import { AppCard, AppChip } from '@/components/ui';
-import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
+import { textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { getSavedTeamId } from '@/lib/team-session';
@@ -63,7 +62,7 @@ function submissionTone(type: Task['type']): 'default' | 'accent' {
 
 export default function TaskListScreen() {
   const { textColor, backgroundColor } = useAppTheme();
-  const insets = useSafeAreaInsets();
+  // SafeScreen already handles safe-area top padding.
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -175,8 +174,8 @@ export default function TaskListScreen() {
       onRetry={onRetry}
       loadingLabel="Loading tasks…"
     >
-      <View style={[screenStyles.container, { backgroundColor }]}>
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
+      <SafeScreen backgroundColor={backgroundColor}>
+        <View style={styles.header}>
           <View style={styles.headerTopRow}>
             <SapsutLogo width={120} height={54} />
           </View>
@@ -304,7 +303,7 @@ export default function TaskListScreen() {
             </View>
           }
         />
-      </View>
+      </SafeScreen>
     </ScreenState>
   );
 }

@@ -1,1 +1,1 @@
-export { default } from '../organizer/review';
+export { default } from '../organizer';

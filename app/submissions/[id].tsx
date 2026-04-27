@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 
 import { ScreenState } from '@/components/screen-state';
-import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
+import { SafeScreen } from '@/components/safe-screen';
+import { textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 
@@ -168,7 +169,7 @@ export default function SubmissionConfirmationScreen() {
         onRetry={onRetry}
         loadingLabel="Checking submission status…"
       >
-        <View style={[screenStyles.container, { backgroundColor }]}>
+        <SafeScreen backgroundColor={backgroundColor}>
           <View style={styles.content}>
             <Text style={[textStyles.title, { color: textColor }]}>
               {title}
@@ -307,7 +308,7 @@ export default function SubmissionConfirmationScreen() {
               </Text>
             </View>
           </View>
-        </View>
+        </SafeScreen>
       </ScreenState>
     </>
   );
