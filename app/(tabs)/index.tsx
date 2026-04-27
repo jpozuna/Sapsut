@@ -9,6 +9,7 @@ import { textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { getSavedTeamId } from '@/lib/team-session';
+import { useRole } from '@/lib/role-context';
 
 type Task = {
   id: string | number;
@@ -63,6 +64,7 @@ function submissionTone(type: Task['type']): 'default' | 'accent' {
 export default function TaskListScreen() {
   const { textColor, backgroundColor } = useAppTheme();
   // SafeScreen already handles safe-area top padding.
+  const { role } = useRole();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -100,16 +102,22 @@ export default function TaskListScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const saved = await getSavedTeamId();
+      const saved = await getSavedTeamId(
+        role === 'organizer' ? 'organizer' : 'participant',
+      );
       if (!mounted) return;
       setTeamId(saved);
     })();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [role]);
 
   useEffect(() => {
+    if (role === 'organizer') {
+      setTaskSubmissionByTaskId({});
+      return;
+    }
     if (!teamId?.trim()) {
       setTaskSubmissionByTaskId({});
       return;
@@ -136,7 +144,7 @@ export default function TaskListScreen() {
     return () => {
       mounted = false;
     };
-  }, [teamId]);
+  }, [role, teamId]);
 
   const onRetry = useCallback(async () => {
     setIsLoading(true);
@@ -220,17 +228,23 @@ export default function TaskListScreen() {
                 onPress={
                   isDisabled
                     ? undefined
-                    : isSubmittedButNotComplete
+                    : role === 'organizer'
                       ? () =>
                           router.push({
-                            pathname: '/submissions/[id]',
-                            params: { id: submission?.id ?? '' },
+                            pathname: '/organizer/create-task',
+                            params: { taskId: String(item.id) },
                           })
-                      : () =>
-                          router.push({
-                            pathname: '/tasks/[id]/submit',
-                            params: { id: String(item.id) },
-                          })
+                      : isSubmittedButNotComplete
+                        ? () =>
+                            router.push({
+                              pathname: '/submissions/[id]',
+                              params: { id: submission?.id ?? '' },
+                            })
+                        : () =>
+                            router.push({
+                              pathname: '/tasks/[id]/submit',
+                              params: { id: String(item.id) },
+                            })
                 }
                 disabled={isDisabled}
                 style={[styles.card, isDisabled ? styles.cardDisabled : null]}
@@ -273,6 +287,9 @@ export default function TaskListScreen() {
                 ) : null}
 
                 <View style={styles.submissionRow}>
+                  {role === 'organizer' ? (
+                    <AppChip tone="danger">Organizer (edit only)</AppChip>
+                  ) : null}
                   <AppChip tone={submissionTone(item.type)}>
                     {formatSubmissionType(item.type)}
                   </AppChip>

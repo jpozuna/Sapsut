@@ -1,10 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const TEAM_ID_KEY = 'sapsut.teamId.v1';
+export type TeamIdScope = 'participant' | 'organizer';
 
-export async function getSavedTeamId(): Promise<string | null> {
+function keyForScope(scope: TeamIdScope): string {
+  return scope === 'organizer'
+    ? 'sapsut.teamId.organizer.v1'
+    : 'sapsut.teamId.participant.v1';
+}
+
+export async function getSavedTeamId(
+  scope: TeamIdScope = 'participant',
+): Promise<string | null> {
   try {
-    const v = await AsyncStorage.getItem(TEAM_ID_KEY);
+    const v = await AsyncStorage.getItem(keyForScope(scope));
     const trimmed = (v ?? '').trim();
     return trimmed ? trimmed : null;
   } catch {
@@ -12,19 +20,24 @@ export async function getSavedTeamId(): Promise<string | null> {
   }
 }
 
-export async function saveTeamId(teamId: string): Promise<void> {
+export async function saveTeamId(
+  teamId: string,
+  scope: TeamIdScope = 'participant',
+): Promise<void> {
   const trimmed = (teamId ?? '').trim();
   if (!trimmed) return;
   try {
-    await AsyncStorage.setItem(TEAM_ID_KEY, trimmed);
+    await AsyncStorage.setItem(keyForScope(scope), trimmed);
   } catch {
     // Best-effort persistence; ignore.
   }
 }
 
-export async function clearSavedTeamId(): Promise<void> {
+export async function clearSavedTeamId(
+  scope: TeamIdScope = 'participant',
+): Promise<void> {
   try {
-    await AsyncStorage.removeItem(TEAM_ID_KEY);
+    await AsyncStorage.removeItem(keyForScope(scope));
   } catch {
     // ignore
   }

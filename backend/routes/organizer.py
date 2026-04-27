@@ -94,6 +94,25 @@ def organizer_create_task(task: OrganizerTaskCreateIn) -> Any:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/tasks/{task_id}")
+def organizer_get_task(task_id: str) -> Any:
+    supabase = get_supabase()
+    try:
+        return supabase.table("tasks").select("*").eq("id", task_id).single().execute().data
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put("/tasks/{task_id}")
+def organizer_update_task(task_id: str, task: OrganizerTaskCreateIn) -> Any:
+    supabase = get_supabase()
+    payload = task.model_dump(exclude_none=True)
+    try:
+        return supabase.table("tasks").update(payload).eq("id", task_id).execute().data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 def _extract_signed_url(resp: Any) -> Optional[str]:
     if not resp:
         return None

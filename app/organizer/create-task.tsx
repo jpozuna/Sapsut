@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 
@@ -49,6 +49,9 @@ function assetLabel(asset: ImagePicker.ImagePickerAsset): string {
 }
 
 export default function OrganizerCreateTaskScreen() {
+  const { taskId: editTaskIdParam } = useLocalSearchParams<{
+    taskId?: string;
+  }>();
   const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
   const {
     role,
@@ -94,6 +97,35 @@ export default function OrganizerCreateTaskScreen() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [createdTask, setCreatedTask] = useState<CreatedTask | null>(null);
+  const editTaskId = String(editTaskIdParam ?? '').trim();
+
+  // If we arrived with a taskId, load it for editing.
+  useEffect(() => {
+    if (!editTaskId) return;
+    if (!organizerCode.trim()) return;
+    let mounted = true;
+    (async () => {
+      setError(null);
+      try {
+        const row = await organizerJson<CreatedTask>(
+          `/organizer/tasks/${encodeURIComponent(editTaskId)}`,
+          organizerCode,
+        );
+        if (!mounted) return;
+        setCreatedTask(row);
+        setTitle(row.title ?? '');
+        setDescription(row.description ?? '');
+        setTaskType(row.type ?? 'combo');
+        setMaxPoints(String(row.max_points ?? 0));
+      } catch (e) {
+        if (!mounted) return;
+        setError(toAppError(e).message ?? 'Failed to load task.');
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [editTaskId, organizerCode]);
 
   const canCreate = useMemo(() => {
     if (!organizerCode.trim()) return false;
@@ -109,30 +141,51 @@ export default function OrganizerCreateTaskScreen() {
     setError(null);
     try {
       const mp = Number(maxPoints.trim());
-      const res = await organizerJson<CreatedTask[]>(
-        '/organizer/tasks',
-        organizerCode,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            title: title.trim(),
-            description: description.trim() || null,
-            type: taskType,
-            max_points: Math.floor(mp),
-            is_active: true,
-          }),
-        },
-      );
-      const row = Array.isArray(res) ? (res[0] ?? null) : null;
-      if (!row?.id) throw new Error('Task creation failed.');
-      setCreatedTask(row);
+      const payload = {
+        title: title.trim(),
+        description: description.trim() || null,
+        type: taskType,
+        max_points: Math.floor(mp),
+        is_active: true,
+      };
+      if (createdTask?.id) {
+        await organizerJson(
+          `/organizer/tasks/${createdTask.id}`,
+          organizerCode,
+          {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+        );
+      } else {
+        const res = await organizerJson<CreatedTask[]>(
+          '/organizer/tasks',
+          organizerCode,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+        );
+        const row = Array.isArray(res) ? (res[0] ?? null) : null;
+        if (!row?.id) throw new Error('Task creation failed.');
+        setCreatedTask(row);
+      }
     } catch (e) {
       setError(toAppError(e).message ?? 'Failed to create task.');
     } finally {
       setIsCreating(false);
     }
-  }, [canCreate, description, maxPoints, organizerCode, taskType, title]);
+  }, [
+    canCreate,
+    createdTask?.id,
+    description,
+    maxPoints,
+    organizerCode,
+    taskType,
+    title,
+  ]);
 
   const [criteria, setCriteria] = useState<string[]>(['']);
   const [isSavingCriteria, setIsSavingCriteria] = useState(false);

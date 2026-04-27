@@ -17,6 +17,7 @@ import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { getSavedTeamId, saveTeamId } from '@/lib/team-session';
+import { useRole } from '@/lib/role-context';
 
 type Task = {
   id: string | number;
@@ -51,6 +52,7 @@ function displayDocLabel(asset: DocAsset): string {
 export default function TaskSubmitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, textColor, backgroundColor, border, tint } = useAppTheme();
+  const { role } = useRole();
 
   const [task, setTask] = useState<Task | null>(null);
   const [isLoadingTask, setIsLoadingTask] = useState(true);
@@ -69,10 +71,19 @@ export default function TaskSubmitScreen() {
 
   const taskId = String(id ?? '');
 
+  // Organizers should not complete tasks; route them back to the task list.
+  useEffect(() => {
+    if (role !== 'organizer') return;
+    router.replace('/(tabs)');
+  }, [role]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const saved = await getSavedTeamId();
+      // Do not leak participant autofill into organizer sessions.
+      const saved = await getSavedTeamId(
+        role === 'organizer' ? 'organizer' : 'participant',
+      );
       if (!mounted) return;
       if (saved && !teamId.trim()) setTeamId(saved);
     })();
@@ -81,7 +92,7 @@ export default function TaskSubmitScreen() {
     };
     // Intentionally only runs once; don't override manual edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [role]);
 
   useEffect(() => {
     // `expo-image-picker` does not reliably expose a camera-availability API across SDKs.
@@ -235,7 +246,10 @@ export default function TaskSubmitScreen() {
     setSubmitSuccessId(null);
 
     try {
-      await saveTeamId(teamId);
+      await saveTeamId(
+        teamId,
+        role === 'organizer' ? 'organizer' : 'participant',
+      );
 
       const fd = new FormData();
       fd.append('task_id', taskId);
@@ -328,7 +342,7 @@ export default function TaskSubmitScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [canSubmit, docAsset, photoAsset, taskId, teamId, textAnswer]);
+  }, [canSubmit, docAsset, photoAsset, role, taskId, teamId, textAnswer]);
 
   const onBackToTasks = useCallback(() => {
     router.replace('/(tabs)');
