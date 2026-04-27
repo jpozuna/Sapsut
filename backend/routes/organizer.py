@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import mimetypes
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
@@ -10,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from auth.organizer import require_organizer
 from services import get_supabase
-from services.scoring import score_submission, _finalize_score
+from services.scoring import _get_openai_client, score_submission, _finalize_score
 from services.storage import storage_bucket
 
 router = APIRouter(dependencies=[Depends(require_organizer)])
@@ -111,6 +113,67 @@ def organizer_update_task(task_id: str, task: OrganizerTaskCreateIn) -> Any:
         return supabase.table("tasks").update(payload).eq("id", task_id).execute().data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _mime_type_from_filename(filename: str) -> str:
+    mt, _ = mimetypes.guess_type(filename or "")
+    if mt and mt.startswith("image/"):
+        return mt
+    return "image/jpeg"
+
+
+class RubricOcrOut(BaseModel):
+    text: str
+    criteria: List[str]
+
+
+@router.post("/tasks/{task_id}/rubric-ocr", response_model=RubricOcrOut)
+async def ocr_rubric_image(task_id: str, image: UploadFile = File(...)) -> RubricOcrOut:
+    # Validate UUID early.
+    try:
+        uuid.UUID(str(task_id))
+    except Exception:
+        raise HTTPException(status_code=400, detail="task_id must be a UUID")
+
+    img_bytes = await image.read()
+    if not img_bytes:
+        raise HTTPException(status_code=400, detail="Missing image bytes")
+
+    # Basic size guard (10MB) for OCR requests; can be adjusted.
+    if len(img_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Rubric image must be <= 10 MB.")
+
+    b64 = base64.b64encode(img_bytes).decode("utf-8")
+    image_mime = _mime_type_from_filename(image.filename or "")
+
+    try:
+        openai_client = _get_openai_client()
+        resp = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{b64}"}},
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract the rubric text from this image.\n"
+                                "Return plain text only (no markdown), preserving line breaks."
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+        text = (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"OCR failed: {e}")
+
+    # Heuristic: split into criteria lines.
+    lines = [ln.strip(" \t-•*") for ln in text.splitlines()]
+    criteria = [ln for ln in lines if ln]
+    return RubricOcrOut(text=text, criteria=criteria[:50])
 
 
 def _extract_signed_url(resp: Any) -> Optional[str]:

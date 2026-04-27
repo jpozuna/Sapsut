@@ -1,3 +1,6 @@
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -8,9 +11,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { Image } from 'expo-image';
 
 import { SafeScreen } from '@/components/safe-screen';
 import { toAppError } from '@/lib/app-error';
@@ -96,6 +96,7 @@ export default function OrganizerCreateTaskScreen() {
   const [maxPoints, setMaxPoints] = useState('10');
 
   const [isCreating, setIsCreating] = useState(false);
+  const [createStep, setCreateStep] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<CreatedTask | null>(null);
   const editTaskId = String(editTaskIdParam ?? '').trim();
 
@@ -138,6 +139,7 @@ export default function OrganizerCreateTaskScreen() {
   const onCreateTask = useCallback(async () => {
     if (!canCreate) return;
     setIsCreating(true);
+    setCreateStep('Creating task…');
     setError(null);
     try {
       const mp = Number(maxPoints.trim());
@@ -148,6 +150,7 @@ export default function OrganizerCreateTaskScreen() {
         max_points: Math.floor(mp),
         is_active: true,
       };
+      let taskIdToUse = createdTask?.id ?? '';
       if (createdTask?.id) {
         await organizerJson(
           `/organizer/tasks/${createdTask.id}`,
@@ -158,6 +161,7 @@ export default function OrganizerCreateTaskScreen() {
             body: JSON.stringify(payload),
           },
         );
+        taskIdToUse = createdTask.id;
       } else {
         const res = await organizerJson<CreatedTask[]>(
           '/organizer/tasks',
@@ -171,24 +175,149 @@ export default function OrganizerCreateTaskScreen() {
         const row = Array.isArray(res) ? (res[0] ?? null) : null;
         if (!row?.id) throw new Error('Task creation failed.');
         setCreatedTask(row);
+        taskIdToUse = row.id;
       }
+
+      // Optional: if a rubric image is selected, OCR it now (after we have a task id).
+      if (taskIdToUse && rubricOcrAsset?.uri) {
+        setCreateStep('Parsing rubric…');
+        const fd = new FormData();
+        const name =
+          rubricOcrAsset.fileName?.trim() ||
+          `rubric-${taskIdToUse}-${Date.now()}.jpg`;
+        const type = rubricOcrAsset.mimeType?.trim() || 'image/jpeg';
+        fd.append('image', {
+          uri: rubricOcrAsset.uri,
+          name,
+          type,
+        } as unknown as Blob);
+        const out = await organizerUploadJson<{
+          text: string;
+          criteria: string[];
+        }>(`/organizer/tasks/${taskIdToUse}/rubric-ocr`, organizerCode, fd);
+        const incoming = Array.isArray(out?.criteria) ? out.criteria : [];
+        const seen = new Set(criteria.map((x) => x.trim()).filter(Boolean));
+        const merged = [...criteria];
+        for (const c of incoming) {
+          const v = String(c ?? '').trim();
+          if (!v) continue;
+          if (seen.has(v)) continue;
+          seen.add(v);
+          merged.push(v);
+        }
+        // Update UI state immediately.
+        setCriteria(merged.length ? merged : ['']);
+      }
+
+      // Save rubric criteria (if any) now so the user doesn't have to press another button.
+      if (taskIdToUse) {
+        const cleaned = criteria.map((c) => c.trim()).filter(Boolean);
+        if (cleaned.length) {
+          setCreateStep('Saving rubric…');
+          await organizerJson(
+            `/organizer/tasks/${taskIdToUse}/criteria`,
+            organizerCode,
+            {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                criteria: cleaned.map((v) => ({
+                  criteria_type: 'rubric',
+                  value: v,
+                })),
+              }),
+            },
+          );
+        }
+      }
+
+      setCreateStep(null);
+      // Return to the Tasks list so the organizer can see the newly created task.
+      router.replace('/(tabs)');
     } catch (e) {
       setError(toAppError(e).message ?? 'Failed to create task.');
     } finally {
       setIsCreating(false);
+      setCreateStep(null);
     }
   }, [
     canCreate,
     createdTask?.id,
+    criteria,
     description,
     maxPoints,
     organizerCode,
+    rubricOcrAsset,
     taskType,
     title,
   ]);
 
   const [criteria, setCriteria] = useState<string[]>(['']);
   const [isSavingCriteria, setIsSavingCriteria] = useState(false);
+  const [rubricOcrAsset, setRubricOcrAsset] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isOcring, setIsOcring] = useState(false);
+
+  const onPickRubricImage = useCallback(async () => {
+    setError(null);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setError('Photo permission is required to pick an image.');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.9,
+    });
+    if (res.canceled) return;
+    setRubricOcrAsset(res.assets?.[0] ?? null);
+  }, []);
+
+  const onRunRubricOcr = useCallback(async () => {
+    if (!createdTask?.id) return;
+    if (!organizerCode.trim()) return;
+    if (!rubricOcrAsset?.uri) return;
+
+    setIsOcring(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      const name =
+        rubricOcrAsset.fileName?.trim() ||
+        `rubric-${createdTask.id}-${Date.now()}.jpg`;
+      const type = rubricOcrAsset.mimeType?.trim() || 'image/jpeg';
+      fd.append('image', {
+        uri: rubricOcrAsset.uri,
+        name,
+        type,
+      } as unknown as Blob);
+
+      const out = await organizerUploadJson<{
+        text: string;
+        criteria: string[];
+      }>(`/organizer/tasks/${createdTask.id}/rubric-ocr`, organizerCode, fd);
+
+      // Merge OCR criteria into existing list (dedupe, keep order).
+      const incoming = Array.isArray(out?.criteria) ? out.criteria : [];
+      setCriteria((prev) => {
+        const seen = new Set(prev.map((x) => x.trim()).filter(Boolean));
+        const next = [...prev];
+        for (const c of incoming) {
+          const v = String(c ?? '').trim();
+          if (!v) continue;
+          if (seen.has(v)) continue;
+          seen.add(v);
+          next.push(v);
+        }
+        return next.length ? next : [''];
+      });
+    } catch (e) {
+      setError(toAppError(e).message ?? 'Rubric OCR failed.');
+    } finally {
+      setIsOcring(false);
+    }
+  }, [createdTask?.id, organizerCode, rubricOcrAsset]);
 
   const onSaveCriteria = useCallback(async () => {
     if (!createdTask?.id) return;
@@ -339,7 +468,7 @@ export default function OrganizerCreateTaskScreen() {
           </View>
 
           <Text style={[textStyles.title, { color: textColor }]}>
-            Create task
+            Create task & Upload rubric
           </Text>
 
           <View style={styles.field}>
@@ -460,6 +589,140 @@ export default function OrganizerCreateTaskScreen() {
             />
           </View>
 
+          <View style={styles.sectionHeader}>
+            <Text style={[textStyles.subtitle, { color: textColor }]}>
+              Rubric (criteria)
+            </Text>
+            {!createdTask ? (
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
+                Create the task first to run OCR and save rubric.
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={styles.row}>
+            <Pressable
+              onPress={onPickRubricImage}
+              disabled={isOcring}
+              style={({ pressed }) => [
+                styles.button,
+                { borderColor: tint },
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                Pick rubric image
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={onRunRubricOcr}
+              disabled={!createdTask || !rubricOcrAsset || isOcring}
+              style={({ pressed }) => [
+                styles.button,
+                {
+                  borderColor:
+                    createdTask && rubricOcrAsset && !isOcring ? tint : border,
+                },
+                pressed && createdTask && rubricOcrAsset
+                  ? styles.pressed
+                  : null,
+              ]}
+            >
+              <Text
+                style={[
+                  textStyles.defaultSemiBold,
+                  {
+                    color:
+                      createdTask && rubricOcrAsset && !isOcring
+                        ? tint
+                        : textColor,
+                  },
+                ]}
+              >
+                {isOcring ? 'Parsing…' : 'OCR rubric'}
+              </Text>
+            </Pressable>
+            {isOcring ? <ActivityIndicator color={tint} /> : null}
+          </View>
+          {rubricOcrAsset ? (
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
+              Selected rubric image: {assetLabel(rubricOcrAsset)}
+            </Text>
+          ) : null}
+
+          {criteria.map((c, idx) => (
+            <View key={idx} style={styles.criteriaRow}>
+              <TextInput
+                value={c}
+                onChangeText={(t) =>
+                  setCriteria((prev) => prev.map((p, i) => (i === idx ? t : p)))
+                }
+                placeholder={`Criterion ${idx + 1}`}
+                placeholderTextColor={border}
+                editable={!isSavingCriteria}
+                style={[
+                  styles.input,
+                  { borderColor: border, color: colors.text, flex: 1 },
+                ]}
+              />
+              <Pressable
+                onPress={() =>
+                  setCriteria((prev) => prev.filter((_, i) => i !== idx))
+                }
+                disabled={criteria.length <= 1 || isSavingCriteria}
+                style={({ pressed }) => [
+                  styles.smallButton,
+                  { borderColor: border },
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
+                  −
+                </Text>
+              </Pressable>
+            </View>
+          ))}
+
+          <View style={styles.row}>
+            <Pressable
+              onPress={() => setCriteria((prev) => [...prev, ''])}
+              disabled={isSavingCriteria}
+              style={({ pressed }) => [
+                styles.button,
+                { borderColor: tint },
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                Add criterion
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={onSaveCriteria}
+              disabled={!createdTask || isSavingCriteria}
+              style={({ pressed }) => [
+                styles.button,
+                { borderColor: createdTask ? tint : border },
+                pressed && createdTask ? styles.pressed : null,
+              ]}
+            >
+              <Text
+                style={[
+                  textStyles.defaultSemiBold,
+                  { color: createdTask ? tint : textColor },
+                ]}
+              >
+                {isSavingCriteria ? 'Saving…' : 'Save rubric'}
+              </Text>
+            </Pressable>
+          </View>
+
           <Pressable
             onPress={onCreateTask}
             disabled={!canCreate}
@@ -470,7 +733,7 @@ export default function OrganizerCreateTaskScreen() {
             ]}
           >
             <Text style={[textStyles.defaultSemiBold, styles.primaryText]}>
-              {isCreating ? 'Creating…' : 'Create task'}
+              {isCreating ? (createStep ?? 'Working…') : 'Create task'}
             </Text>
           </Pressable>
 
@@ -487,78 +750,6 @@ export default function OrganizerCreateTaskScreen() {
 
           {createdTask ? (
             <>
-              <View style={styles.sectionHeader}>
-                <Text style={[textStyles.subtitle, { color: textColor }]}>
-                  Rubric (criteria)
-                </Text>
-              </View>
-
-              {criteria.map((c, idx) => (
-                <View key={idx} style={styles.criteriaRow}>
-                  <TextInput
-                    value={c}
-                    onChangeText={(t) =>
-                      setCriteria((prev) =>
-                        prev.map((p, i) => (i === idx ? t : p)),
-                      )
-                    }
-                    placeholder={`Criterion ${idx + 1}`}
-                    placeholderTextColor={border}
-                    editable={!isSavingCriteria}
-                    style={[
-                      styles.input,
-                      { borderColor: border, color: colors.text, flex: 1 },
-                    ]}
-                  />
-                  <Pressable
-                    onPress={() =>
-                      setCriteria((prev) => prev.filter((_, i) => i !== idx))
-                    }
-                    disabled={criteria.length <= 1 || isSavingCriteria}
-                    style={({ pressed }) => [
-                      styles.smallButton,
-                      { borderColor: border },
-                      pressed ? styles.pressed : null,
-                    ]}
-                  >
-                    <Text
-                      style={[textStyles.defaultSemiBold, { color: textColor }]}
-                    >
-                      −
-                    </Text>
-                  </Pressable>
-                </View>
-              ))}
-
-              <View style={styles.row}>
-                <Pressable
-                  onPress={() => setCriteria((prev) => [...prev, ''])}
-                  disabled={isSavingCriteria}
-                  style={({ pressed }) => [
-                    styles.button,
-                    { borderColor: tint },
-                    pressed ? styles.pressed : null,
-                  ]}
-                >
-                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                    Add criterion
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={onSaveCriteria}
-                  disabled={isSavingCriteria}
-                  style={({ pressed }) => [
-                    styles.button,
-                    { borderColor: tint },
-                    pressed ? styles.pressed : null,
-                  ]}
-                >
-                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                    {isSavingCriteria ? 'Saving…' : 'Save rubric'}
-                  </Text>
-                </Pressable>
-              </View>
-
               <View style={styles.sectionHeader}>
                 <Text style={[textStyles.subtitle, { color: textColor }]}>
                   Photo references
