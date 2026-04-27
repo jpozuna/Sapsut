@@ -8,9 +8,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Stack } from 'expo-router';
+import { router } from 'expo-router';
 
-import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
+import { SafeScreen } from '@/components/safe-screen';
+import { textStyles, useAppTheme } from '@/lib/ui';
 import { toAppError } from '@/lib/app-error';
 import { organizerJson } from '@/lib/organizer-api';
 import { useRole } from '@/lib/role-context';
@@ -41,6 +42,15 @@ type ReviewQueueRow = {
 
 export default function OrganizerReviewDashboard() {
   const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
+  const goToCreate = useCallback(() => {
+    // keep organizer code in session via RoleContext
+    // navigation only; API calls still require entering/using the code field
+    // (organizer code is prefilled on arrival)
+    router.push('/(tabs)/organizer');
+  }, []);
+  const goToHistory = useCallback(() => {
+    router.push('/(tabs)/organizer/history');
+  }, []);
 
   const {
     role,
@@ -292,89 +302,128 @@ export default function OrganizerReviewDashboard() {
   );
 
   return (
-    <>
-      <Stack.Screen options={{ title: 'Organizer Review' }} />
-      <View style={[screenStyles.container, { backgroundColor }]}>
-        <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>
-            Review Queue
+    <SafeScreen backgroundColor={backgroundColor}>
+      <View style={styles.navRow}>
+        <Pressable
+          onPress={goToCreate}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: border },
+            pressed ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Create
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {}}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: tint, backgroundColor: tint },
+            pressed ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
+            Review
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={goToHistory}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: border },
+            pressed ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            History
+          </Text>
+        </Pressable>
+      </View>
+      <View style={styles.header}>
+        <Text style={[textStyles.title, { color: textColor }]}>
+          Review Queue
+        </Text>
+        <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+          Enter organizer code to load flagged submissions.
+        </Text>
+      </View>
+
+      <View style={styles.codeRow}>
+        <TextInput
+          value={organizerCode}
+          onChangeText={setOrganizerCode}
+          placeholder="Organizer code"
+          placeholderTextColor={border}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          style={[
+            styles.codeInput,
+            { borderColor: border, color: colors.text },
+          ]}
+        />
+        <Pressable
+          onPress={loadQueue}
+          disabled={!canLoad || isLoading}
+          style={({ pressed }) => [
+            styles.loadButton,
+            { backgroundColor: canLoad && !isLoading ? tint : border },
+            pressed && canLoad && !isLoading ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
+            {isLoading ? 'Loading…' : 'Load'}
+          </Text>
+        </Pressable>
+      </View>
+
+      {error ? (
+        <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
+          {error}
+        </Text>
+      ) : null}
+
+      {isLoading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color={tint} />
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Fetching review queue…
+          </Text>
+        </View>
+      ) : rows.length === 0 && canLoad ? (
+        <View style={styles.emptyBox}>
+          <Text style={[textStyles.subtitle, { color: textColor }]}>
+            Queue clear
           </Text>
           <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Enter organizer code to load flagged submissions.
+            No flagged submissions right now.
           </Text>
         </View>
-
-        <View style={styles.codeRow}>
-          <TextInput
-            value={organizerCode}
-            onChangeText={setOrganizerCode}
-            placeholder="Organizer code"
-            placeholderTextColor={border}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            style={[
-              styles.codeInput,
-              { borderColor: border, color: colors.text },
-            ]}
-          />
-          <Pressable
-            onPress={loadQueue}
-            disabled={!canLoad || isLoading}
-            style={({ pressed }) => [
-              styles.loadButton,
-              { backgroundColor: canLoad && !isLoading ? tint : border },
-              pressed && canLoad && !isLoading ? styles.buttonPressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
-              {isLoading ? 'Loading…' : 'Load'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {error ? (
-          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
-            {error}
-          </Text>
-        ) : null}
-
-        {isLoading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator color={tint} />
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Fetching review queue…
-            </Text>
-          </View>
-        ) : rows.length === 0 && canLoad ? (
-          <View style={styles.emptyBox}>
-            <Text style={[textStyles.subtitle, { color: textColor }]}>
-              Queue clear
-            </Text>
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              No flagged submissions right now.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={rows}
-            keyExtractor={(r) => r.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.list}
-            refreshing={isLoading}
-            onRefresh={loadQueue}
-          />
-        )}
-      </View>
-    </>
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(r) => r.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          refreshing={isLoading}
+          onRefresh={loadQueue}
+        />
+      )}
+    </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  navRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 12 },
+  navPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  navActiveText: { color: 'white' },
   header: { gap: 6, marginBottom: 12 },
   hint: { opacity: 0.85 },
   errorText: { marginTop: 8, opacity: 0.95 },

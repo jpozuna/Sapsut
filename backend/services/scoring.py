@@ -37,6 +37,20 @@ def _auto_approve_threshold() -> float:
     return max(0.9, min(1.0, val))
 
 
+def _auto_approve_max_score_threshold() -> float:
+    """
+    Secondary threshold for auto-approving when the model gives a perfect score.
+
+    Default is 0.95; organizers can relax it down to 0.8 via env var; we clamp to [0.8, 1.0].
+    """
+    raw = os.getenv("AUTO_APPROVE_MAX_SCORE_CONFIDENCE_THRESHOLD", "0.95").strip()
+    try:
+        val = float(raw)
+    except Exception:
+        val = 0.95
+    return max(0.8, min(1.0, val))
+
+
 @dataclass(frozen=True)
 class ScoreResult:
     score: int
@@ -337,9 +351,12 @@ Score this submission. Return JSON only:
             return
 
         threshold = _auto_approve_threshold()
-        status = "approved" if parsed.confidence >= threshold else "flagged"
+        max_score_threshold = _auto_approve_max_score_threshold()
+        should_auto_approve = (parsed.confidence >= threshold) or (
+            int(parsed.score) >= int(max_points) and float(parsed.confidence) >= max_score_threshold
+        )
 
-        if status == "approved":
+        if should_auto_approve:
             _finalize_score(
                 supabase,
                 submission_id,
@@ -347,14 +364,30 @@ Score this submission. Return JSON only:
                 parsed.score,
                 parsed.confidence,
                 parsed.rationale,
-                "approved",
+                "auto_approved",
                 ai_result={
                     "mode": "llm",
                     "threshold": threshold,
+                    "max_score_threshold": max_score_threshold,
                     "raw": parsed.raw,
                     "retrieved_criteria": retrieved_criteria,
                 },
             )
+            # Best-effort organizer audit trail.
+            try:
+                supabase.table("review_queue_history").insert(
+                    {
+                        "queue_id": None,
+                        "submission_id": submission_id,
+                        "decision": "auto_approve",
+                        "final_score": int(parsed.score),
+                        "final_rationale": parsed.rationale,
+                        "suggested_score": int(parsed.score),
+                        "suggested_rationale": parsed.rationale,
+                    }
+                ).execute()
+            except Exception:
+                pass
         else:
             supabase.table("submissions").update(
                 {
@@ -366,6 +399,7 @@ Score this submission. Return JSON only:
                     "ai_result": {
                         "mode": "llm",
                         "threshold": threshold,
+                        "max_score_threshold": max_score_threshold,
                         "raw": parsed.raw,
                         "retrieved_criteria": retrieved_criteria,
                     },

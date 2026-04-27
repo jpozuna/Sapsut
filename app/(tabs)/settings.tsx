@@ -8,15 +8,14 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenState } from '@/components/screen-state';
-import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
+import { SafeScreen } from '@/components/safe-screen';
+import { textStyles, useAppTheme } from '@/lib/ui';
 import { useRole } from '@/lib/role-context';
 
 export default function SettingsScreen() {
   const { textColor, backgroundColor, tint, border, colors } = useAppTheme();
-  const insets = useSafeAreaInsets();
 
   const { role, enterOrganizerMode, exitOrganizerMode } = useRole();
 
@@ -58,10 +57,8 @@ export default function SettingsScreen() {
 
   return (
     <ScreenState isLoading={false}>
-      <View
-        style={[screenStyles.container, styles.container, { backgroundColor }]}
-      >
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
+      <SafeScreen backgroundColor={backgroundColor} style={styles.container}>
+        <View style={styles.header}>
           <Text style={[textStyles.title, { color: textColor }]}>Settings</Text>
           <Text
             style={[textStyles.default, styles.subtitle, { color: textColor }]}
@@ -189,7 +186,7 @@ export default function SettingsScreen() {
             </View>
           </View>
         </Modal>
-      </View>
+      </SafeScreen>
     </ScreenState>
   );
 }

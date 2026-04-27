@@ -111,16 +111,18 @@ async def create_submission(
     try:
         task = (
             supabase.table("tasks")
-            .select("id,allow_multiple_submissions")
+            .select("id,type,allow_multiple_submissions")
             .eq("id", task_id)
             .single()
             .execute()
             .data
         )
         allow_multiple = bool(task.get("allow_multiple_submissions", False))
+        task_type = (task.get("type") or "").strip()
     except Exception:
         # If the column doesn't exist yet (migration not applied), default to single-submission behavior.
         allow_multiple = False
+        task_type = ""
 
     if not allow_multiple:
         existing = (
@@ -140,8 +142,21 @@ async def create_submission(
 
     normalized_text_answer = text_answer or ""
     normalized_photo_path = (photo_path or "").strip() or None
-    if not normalized_text_answer.strip() and (photo is None) and (normalized_photo_path is None):
-        return {"error": "Submission must include text_answer, photo, or photo_path."}
+
+    wants_text = task_type in {"text", "combo"}
+    wants_photo = task_type in {"photo", "combo"}
+
+    # Enforce at least one valid input.
+    if wants_text and not wants_photo:
+        if not normalized_text_answer.strip():
+            return {"error": "Submission must include text_answer."}
+    else:
+        if (
+            (not normalized_text_answer.strip())
+            and (photo is None)
+            and (normalized_photo_path is None)
+        ):
+            return {"error": "Submission must include text_answer, photo, or photo_path."}
 
     stored_photo_path = normalized_photo_path
     if (stored_photo_path is None) and (photo is not None):

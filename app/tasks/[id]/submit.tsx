@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 
@@ -16,6 +16,7 @@ import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { getSavedTeamId, saveTeamId } from '@/lib/team-session';
+import { useRole } from '@/lib/role-context';
 
 type Task = {
   id: string | number;
@@ -40,6 +41,7 @@ function displayAssetLabel(asset: ImagePicker.ImagePickerAsset): string {
 export default function TaskSubmitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, textColor, backgroundColor, border, tint } = useAppTheme();
+  const { role } = useRole();
 
   const [task, setTask] = useState<Task | null>(null);
   const [isLoadingTask, setIsLoadingTask] = useState(true);
@@ -57,10 +59,19 @@ export default function TaskSubmitScreen() {
 
   const taskId = String(id ?? '');
 
+  // Organizers should not complete tasks; route them back to the task list.
+  useEffect(() => {
+    if (role !== 'organizer') return;
+    router.replace('/(tabs)');
+  }, [role]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const saved = await getSavedTeamId();
+      // Do not leak participant autofill into organizer sessions.
+      const saved = await getSavedTeamId(
+        role === 'organizer' ? 'organizer' : 'participant',
+      );
       if (!mounted) return;
       if (saved && !teamId.trim()) setTeamId(saved);
     })();
@@ -69,7 +80,7 @@ export default function TaskSubmitScreen() {
     };
     // Intentionally only runs once; don't override manual edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [role]);
 
   useEffect(() => {
     // `expo-image-picker` does not reliably expose a camera-availability API across SDKs.
@@ -104,24 +115,26 @@ export default function TaskSubmitScreen() {
   const wantsText = submissionType === 'text' || submissionType === 'combo';
   const wantsPhoto = submissionType === 'photo' || submissionType === 'combo';
 
+  const hasText = Boolean(textAnswer.trim());
+
   const canSubmit = useMemo(() => {
     if (!taskId.trim()) return false;
     if (!teamId.trim()) return false;
     if (!submissionType) return false;
     if (isSubmitting) return false;
     if (wantsText && wantsPhoto) {
-      return Boolean(textAnswer.trim() || photoAsset);
+      return Boolean(hasText || photoAsset);
     }
-    if (wantsText) return Boolean(textAnswer.trim());
+    if (wantsText) return Boolean(hasText);
     if (wantsPhoto) return Boolean(photoAsset);
     return false;
   }, [
+    hasText,
     isSubmitting,
     photoAsset,
     submissionType,
     taskId,
     teamId,
-    textAnswer,
     wantsPhoto,
     wantsText,
   ]);
@@ -185,7 +198,10 @@ export default function TaskSubmitScreen() {
     setSubmitSuccessId(null);
 
     try {
-      await saveTeamId(teamId);
+      await saveTeamId(
+        teamId,
+        role === 'organizer' ? 'organizer' : 'participant',
+      );
 
       const fd = new FormData();
       fd.append('task_id', taskId);
@@ -268,267 +284,237 @@ export default function TaskSubmitScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [canSubmit, photoAsset, taskId, teamId, textAnswer]);
+  }, [canSubmit, photoAsset, role, taskId, teamId, textAnswer]);
 
   const onBackToTasks = useCallback(() => {
     router.replace('/(tabs)');
   }, []);
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: 'Submit',
-          headerBackTitle: 'Tasks',
-          headerLeft: () => (
-            <Pressable onPress={onBackToTasks} style={styles.headerBack}>
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Back
-              </Text>
-            </Pressable>
-          ),
-        }}
-      />
-      <View style={[screenStyles.container, { backgroundColor }]}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={[textStyles.title, { color: textColor }]}>
-            Submission
+    <View style={[screenStyles.container, { backgroundColor }]}>
+      <Pressable onPress={onBackToTasks} style={styles.inlineBack}>
+        <Text style={[textStyles.defaultSemiBold, { color: tint }]}>Back</Text>
+      </Pressable>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={[textStyles.title, { color: textColor }]}>Submission</Text>
+
+        {isLoadingTask ? (
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Loading task…
           </Text>
-
-          {isLoadingTask ? (
+        ) : task ? (
+          <View style={styles.taskHeader}>
+            <Text style={[textStyles.subtitle, { color: textColor }]}>
+              {task.title}
+            </Text>
+            {task.description?.trim() ? (
+              <Text
+                style={[
+                  textStyles.default,
+                  styles.description,
+                  { color: textColor },
+                ]}
+              >
+                {task.description}
+              </Text>
+            ) : null}
             <Text
               style={[textStyles.default, styles.hint, { color: textColor }]}
             >
-              Loading task…
+              Submission type:{' '}
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                {task.type}
+              </Text>
             </Text>
-          ) : task ? (
-            <View style={styles.taskHeader}>
-              <Text style={[textStyles.subtitle, { color: textColor }]}>
-                {task.title}
-              </Text>
-              {task.description?.trim() ? (
-                <Text
-                  style={[
-                    textStyles.default,
-                    styles.description,
-                    { color: textColor },
-                  ]}
-                >
-                  {task.description}
-                </Text>
-              ) : null}
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                Submission type:{' '}
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  {task.type}
-                </Text>
-              </Text>
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                Points:{' '}
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  {task.max_points}
-                </Text>
-              </Text>
-            </View>
-          ) : (
             <Text
               style={[textStyles.default, styles.hint, { color: textColor }]}
             >
-              Couldn’t load this task. Pull to refresh the task list and try
-              again.
+              Points:{' '}
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                {task.max_points}
+              </Text>
             </Text>
-          )}
+          </View>
+        ) : (
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Couldn’t load this task. Pull to refresh the task list and try
+            again.
+          </Text>
+        )}
 
-          {taskError ? (
-            <Text style={[textStyles.default, styles.hint, { color: tint }]}>
-              Failed to load task list.
-            </Text>
-          ) : null}
+        {taskError ? (
+          <Text style={[textStyles.default, styles.hint, { color: tint }]}>
+            Failed to load task list.
+          </Text>
+        ) : null}
 
+        <View style={styles.field}>
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Team ID
+          </Text>
+          <TextInput
+            value={teamId}
+            onChangeText={setTeamId}
+            placeholder="Enter your team ID (we’ll remember it)"
+            placeholderTextColor={border}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!isSubmitting}
+            style={[styles.input, { borderColor: border, color: colors.text }]}
+          />
+        </View>
+
+        {wantsText ? (
           <View style={styles.field}>
             <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Team ID
+              Text answer
             </Text>
             <TextInput
-              value={teamId}
-              onChangeText={setTeamId}
-              placeholder="Enter your team ID (we’ll remember it)"
+              value={textAnswer}
+              onChangeText={setTextAnswer}
+              placeholder="Type your answer…"
               placeholderTextColor={border}
-              autoCapitalize="none"
-              autoCorrect={false}
               editable={!isSubmitting}
+              multiline
               style={[
-                styles.input,
+                styles.textarea,
                 { borderColor: border, color: colors.text },
               ]}
             />
           </View>
+        ) : null}
 
-          {wantsText ? (
-            <View style={styles.field}>
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Text answer
-              </Text>
-              <TextInput
-                value={textAnswer}
-                onChangeText={setTextAnswer}
-                placeholder="Type your answer…"
-                placeholderTextColor={border}
-                editable={!isSubmitting}
-                multiline
-                style={[
-                  styles.textarea,
-                  { borderColor: border, color: colors.text },
+        {wantsPhoto ? (
+          <View style={styles.field}>
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Photo
+            </Text>
+            <View style={styles.photoRow}>
+              <Pressable
+                onPress={onTakePhoto}
+                disabled={isSubmitting}
+                style={({ pressed }) => [
+                  styles.button,
+                  { borderColor: tint },
+                  pressed ? styles.buttonPressed : null,
                 ]}
-              />
-            </View>
-          ) : null}
-
-          {wantsPhoto ? (
-            <View style={styles.field}>
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Photo
-              </Text>
-              <View style={styles.photoRow}>
-                <Pressable
-                  onPress={onTakePhoto}
-                  disabled={isSubmitting}
-                  style={({ pressed }) => [
-                    styles.button,
-                    { borderColor: tint },
-                    pressed ? styles.buttonPressed : null,
-                  ]}
-                >
-                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                    {cameraAvailable === false
-                      ? 'Camera unavailable'
-                      : photoAsset
-                        ? 'Retake photo'
-                        : 'Take photo'}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={onPickPhoto}
-                  disabled={isSubmitting}
-                  style={({ pressed }) => [
-                    styles.button,
-                    { borderColor: tint },
-                    pressed ? styles.buttonPressed : null,
-                  ]}
-                >
-                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                    {photoAsset ? 'Pick different' : 'Pick from library'}
-                  </Text>
-                </Pressable>
-                {photoAsset ? (
-                  <Pressable
-                    onPress={onRemovePhoto}
-                    disabled={isSubmitting}
-                    style={({ pressed }) => [
-                      styles.button,
-                      { borderColor: border },
-                      pressed ? styles.buttonPressed : null,
-                    ]}
-                  >
-                    <Text
-                      style={[textStyles.defaultSemiBold, { color: textColor }]}
-                    >
-                      Remove
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
+              >
+                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                  {cameraAvailable === false
+                    ? 'Camera unavailable'
+                    : photoAsset
+                      ? 'Retake photo'
+                      : 'Take photo'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={onPickPhoto}
+                disabled={isSubmitting}
+                style={({ pressed }) => [
+                  styles.button,
+                  { borderColor: tint },
+                  pressed ? styles.buttonPressed : null,
+                ]}
+              >
+                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                  {photoAsset ? 'Pick different' : 'Pick from library'}
+                </Text>
+              </Pressable>
               {photoAsset ? (
-                <>
+                <Pressable
+                  onPress={onRemovePhoto}
+                  disabled={isSubmitting}
+                  style={({ pressed }) => [
+                    styles.button,
+                    { borderColor: border },
+                    pressed ? styles.buttonPressed : null,
+                  ]}
+                >
                   <Text
-                    style={[
-                      textStyles.default,
-                      styles.hint,
-                      { color: textColor },
-                    ]}
-                    numberOfLines={2}
-                    ellipsizeMode="middle"
+                    style={[textStyles.defaultSemiBold, { color: textColor }]}
                   >
-                    Selected: {displayAssetLabel(photoAsset)}
+                    Remove
                   </Text>
-                  <View style={styles.previewFrame}>
-                    <Image
-                      source={{ uri: photoAsset.uri }}
-                      style={styles.previewImage}
-                      contentFit="cover"
-                      accessibilityLabel="Selected photo preview"
-                    />
-                  </View>
-                </>
-              ) : (
+                </Pressable>
+              ) : null}
+            </View>
+            {photoAsset ? (
+              <>
                 <Text
                   style={[
                     textStyles.default,
                     styles.hint,
                     { color: textColor },
                   ]}
+                  numberOfLines={2}
+                  ellipsizeMode="middle"
                 >
-                  No photo selected.
+                  Selected: {displayAssetLabel(photoAsset)}
                 </Text>
-              )}
-            </View>
-          ) : null}
-
-          {submitError ? (
-            <Text
-              style={[textStyles.default, styles.errorText, { color: tint }]}
-            >
-              {submitError}
-            </Text>
-          ) : null}
-
-          {submitSuccessId ? (
-            <Text
-              style={[
-                textStyles.default,
-                styles.successText,
-                { color: textColor },
-              ]}
-            >
-              Submitted. ID:{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {submitSuccessId}
+                <View style={styles.previewFrame}>
+                  <Image
+                    source={{ uri: photoAsset.uri }}
+                    style={styles.previewImage}
+                    contentFit="cover"
+                    accessibilityLabel="Selected photo preview"
+                  />
+                </View>
+              </>
+            ) : (
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
+                No photo selected.
               </Text>
-            </Text>
-          ) : null}
+            )}
+          </View>
+        ) : null}
 
-          <Pressable
-            onPress={onSubmit}
-            disabled={!canSubmit}
-            style={({ pressed }) => [
-              styles.submitButton,
-              { backgroundColor: canSubmit ? tint : border },
-              pressed && canSubmit ? styles.submitPressed : null,
+        {submitError ? (
+          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
+            {submitError}
+          </Text>
+        ) : null}
+
+        {submitSuccessId ? (
+          <Text
+            style={[
+              textStyles.default,
+              styles.successText,
+              { color: textColor },
             ]}
           >
-            <Text style={[textStyles.defaultSemiBold, styles.submitText]}>
-              {isSubmitting ? 'Submitting…' : 'Submit'}
+            Submitted. ID:{' '}
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              {submitSuccessId}
             </Text>
-          </Pressable>
-        </ScrollView>
-      </View>
-    </>
+          </Text>
+        ) : null}
+
+        <Pressable
+          onPress={onSubmit}
+          disabled={!canSubmit}
+          style={({ pressed }) => [
+            styles.submitButton,
+            { backgroundColor: canSubmit ? tint : border },
+            pressed && canSubmit ? styles.submitPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, styles.submitText]}>
+            {isSubmitting ? 'Submitting…' : 'Submit'}
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerBack: {
+  inlineBack: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 6,
     paddingVertical: 6,
   },
