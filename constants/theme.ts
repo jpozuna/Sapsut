@@ -36,16 +36,16 @@ export const Colors = {
 export const Fonts = Platform.select({
   ios: {
     // Loaded via expo-font in `app/_layout.tsx`
-    sans: 'JosefinSans_400Regular',
-    serif: 'JosefinSlab_400Regular',
+    sans: 'JosefinSans_600SemiBold',
+    serif: 'JosefinSlab_600SemiBold',
     /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
     /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
-    sans: 'JosefinSans_400Regular',
-    serif: 'JosefinSlab_400Regular',
+    sans: 'JosefinSans_600SemiBold',
+    serif: 'JosefinSlab_600SemiBold',
     rounded: 'normal',
     mono: 'monospace',
   },

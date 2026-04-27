@@ -36,17 +36,14 @@ export const textStyles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     fontFamily: Fonts?.sans,
-    fontWeight: '600',
   },
   title: {
     fontSize: 32,
     fontFamily: Fonts?.serif,
-    fontWeight: '600',
     lineHeight: 32,
   },
   subtitle: {
     fontSize: 20,
     fontFamily: Fonts?.serif,
-    fontWeight: '600',
   },
 });

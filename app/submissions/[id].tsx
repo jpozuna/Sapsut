@@ -134,6 +134,7 @@ export default function SubmissionConfirmationScreen() {
   }, [error, fetchOnce, isLoading, isTerminal, submissionId]);
 
   const onBackToTasks = useCallback(() => {
+    // Avoid routing to the group root (which can surface as a weird back label).
     router.replace('/(tabs)');
   }, []);
 
@@ -148,7 +149,19 @@ export default function SubmissionConfirmationScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Confirmation' }} />
+      <Stack.Screen
+        options={{
+          title: 'Confirmation',
+          headerBackTitle: 'Tasks',
+          headerLeft: () => (
+            <Pressable onPress={onBackToTasks} style={styles.headerBack}>
+              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                Back
+              </Text>
+            </Pressable>
+          ),
+        }}
+      />
       <ScreenState
         isLoading={isLoading}
         error={error}
@@ -301,6 +314,10 @@ export default function SubmissionConfirmationScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerBack: {
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+  },
   content: {
     gap: 10,
   },

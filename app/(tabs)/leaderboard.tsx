@@ -1,15 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type PressableStateCallbackType,
-} from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenState } from '@/components/screen-state';
+import { AppButton, AppCard } from '@/components/ui';
 import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
@@ -30,7 +25,8 @@ function toScore(team: LeaderboardTeam): number {
 }
 
 export default function LeaderboardScreen() {
-  const { textColor, backgroundColor, tint, border } = useAppTheme();
+  const { textColor, backgroundColor, tint } = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const [teams, setTeams] = useState<LeaderboardTeam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -135,7 +131,7 @@ export default function LeaderboardScreen() {
       loadingLabel="Loading leaderboard…"
     >
       <View style={[screenStyles.container, { backgroundColor }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
           <Text style={[textStyles.title, { color: textColor }]}>
             Leaderboard
           </Text>
@@ -157,7 +153,7 @@ export default function LeaderboardScreen() {
           onRefresh={onRefresh}
           renderItem={({ item, index }) => {
             return (
-              <View style={[styles.row, { borderColor: border }]}>
+              <AppCard style={styles.row} contentStyle={styles.rowContent}>
                 <View style={styles.rowLeft}>
                   <Text
                     style={[
@@ -174,6 +170,7 @@ export default function LeaderboardScreen() {
                       styles.teamName,
                       { color: textColor },
                     ]}
+                    numberOfLines={1}
                   >
                     {item.name || 'Unnamed team'}
                   </Text>
@@ -188,7 +185,7 @@ export default function LeaderboardScreen() {
                 >
                   {toScore(item)}
                 </Text>
-              </View>
+              </AppCard>
             );
           }}
           ListEmptyComponent={
@@ -211,18 +208,13 @@ export default function LeaderboardScreen() {
               >
                 Once teams join and score points, they’ll show up here.
               </Text>
-              <Pressable
+              <AppButton
+                tone="secondary"
                 onPress={onRetry}
-                style={({ pressed }: PressableStateCallbackType) => [
-                  styles.retryButton,
-                  { borderColor: tint },
-                  pressed ? styles.retryButtonPressed : null,
-                ]}
+                style={styles.retryButton}
               >
-                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                  Refresh
-                </Text>
-              </Pressable>
+                Refresh
+              </AppButton>
             </View>
           }
         />
@@ -248,8 +240,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   row: {
-    borderWidth: 1,
     borderRadius: 16,
+    overflow: 'hidden',
+  },
+  rowContent: {
     paddingVertical: 12,
     paddingHorizontal: 14,
     flexDirection: 'row',
@@ -287,14 +281,6 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   retryButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
     marginTop: 4,
-  },
-  retryButtonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.99 }],
   },
 });

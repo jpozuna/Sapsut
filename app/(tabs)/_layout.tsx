@@ -1,5 +1,4 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -42,6 +41,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="gearshape.fill" color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="organizer"
+        options={{
+          // Hidden route used for organizer tools.
+          href: null,
         }}
       />
     </Tabs>
