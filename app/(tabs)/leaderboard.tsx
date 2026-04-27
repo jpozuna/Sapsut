@@ -8,6 +8,7 @@ import {
   type PressableStateCallbackType,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenState } from '@/components/screen-state';
 import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
@@ -31,6 +32,7 @@ function toScore(team: LeaderboardTeam): number {
 
 export default function LeaderboardScreen() {
   const { textColor, backgroundColor, tint, border } = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const [teams, setTeams] = useState<LeaderboardTeam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -135,7 +137,7 @@ export default function LeaderboardScreen() {
       loadingLabel="Loading leaderboard…"
     >
       <View style={[screenStyles.container, { backgroundColor }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
           <Text style={[textStyles.title, { color: textColor }]}>
             Leaderboard
           </Text>
