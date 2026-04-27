@@ -134,7 +134,8 @@ export default function SubmissionConfirmationScreen() {
   }, [error, fetchOnce, isLoading, isTerminal, submissionId]);
 
   const onBackToTasks = useCallback(() => {
-    router.replace('/(tabs)');
+    // Avoid routing to the group root (which can surface as a weird back label).
+    router.replace('/(tabs)/index');
   }, []);
 
   const title = useMemo(() => {
@@ -148,7 +149,9 @@ export default function SubmissionConfirmationScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Confirmation' }} />
+      <Stack.Screen
+        options={{ title: 'Confirmation', headerBackTitle: 'Tasks' }}
+      />
       <ScreenState
         isLoading={isLoading}
         error={error}

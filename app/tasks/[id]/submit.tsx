@@ -15,6 +15,7 @@ import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { uploadSubmissionPhoto } from '@/lib/storage';
+import { getSavedTeamId, saveTeamId } from '@/lib/team-session';
 
 type Task = {
   id: string | number;
@@ -49,6 +50,20 @@ export default function TaskSubmitScreen() {
   const [submitSuccessId, setSubmitSuccessId] = useState<string | null>(null);
 
   const taskId = String(id ?? '');
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const saved = await getSavedTeamId();
+      if (!mounted) return;
+      if (saved && !teamId.trim()) setTeamId(saved);
+    })();
+    return () => {
+      mounted = false;
+    };
+    // Intentionally only runs once; don't override manual edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // `expo-image-picker` does not reliably expose a camera-availability API across SDKs.
@@ -167,6 +182,7 @@ export default function TaskSubmitScreen() {
     setSubmitSuccessId(null);
 
     try {
+      await saveTeamId(teamId);
       let uploadedPath: string | null = photoPath;
 
       if (photoAsset && !uploadedPath) {
@@ -257,7 +273,7 @@ export default function TaskSubmitScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Submit' }} />
+      <Stack.Screen options={{ title: 'Submit', headerBackTitle: 'Tasks' }} />
       <View style={[screenStyles.container, { backgroundColor }]}>
         <View style={styles.content}>
           <Text style={[textStyles.title, { color: textColor }]}>
@@ -275,6 +291,17 @@ export default function TaskSubmitScreen() {
               <Text style={[textStyles.subtitle, { color: textColor }]}>
                 {task.title}
               </Text>
+              {task.description?.trim() ? (
+                <Text
+                  style={[
+                    textStyles.default,
+                    styles.description,
+                    { color: textColor },
+                  ]}
+                >
+                  {task.description}
+                </Text>
+              ) : null}
               <Text
                 style={[textStyles.default, styles.hint, { color: textColor }]}
               >
@@ -285,12 +312,23 @@ export default function TaskSubmitScreen() {
                   {task.type}
                 </Text>
               </Text>
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
+                Points:{' '}
+                <Text
+                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+                >
+                  {task.max_points}
+                </Text>
+              </Text>
             </View>
           ) : (
             <Text
               style={[textStyles.default, styles.hint, { color: textColor }]}
             >
-              Couldn’t load task. (id: {taskId})
+              Couldn’t load this task. Pull to refresh the task list and try
+              again.
             </Text>
           )}
 
@@ -307,7 +345,7 @@ export default function TaskSubmitScreen() {
             <TextInput
               value={teamId}
               onChangeText={setTeamId}
-              placeholder="UUID of your team"
+              placeholder="Enter your team ID (we’ll remember it)"
               placeholderTextColor={border}
               autoCapitalize="none"
               autoCorrect={false}
@@ -501,10 +539,13 @@ export default function TaskSubmitScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    gap: 10,
+    gap: 8,
   },
   taskHeader: {
     gap: 4,
+  },
+  description: {
+    opacity: 0.9,
   },
   hint: {
     opacity: 0.85,

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenState } from '@/components/screen-state';
 import { SapsutLogo } from '@/components/sapsut-logo';
 import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
+import { getSavedTeamId } from '@/lib/team-session';
 
 type Task = {
   id: string | number;
@@ -18,6 +20,14 @@ type Task = {
   opens_at?: string | null;
   closes_at?: string | null;
 };
+
+type SubmissionListItem = {
+  id: string;
+  task_id?: string | null;
+  team_id?: string | null;
+};
+
+const NEW_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function isTaskOpenNow(task: Task, nowMs: number): boolean {
   const opensMs = task.opens_at ? Date.parse(task.opens_at) : NaN;
@@ -42,11 +52,16 @@ function formatSubmissionType(type: Task['type']): string {
 
 export default function TaskListScreen() {
   const { textColor, backgroundColor, border, tint } = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(undefined);
+  const [teamId, setTeamId] = useState<string | null>(null);
+  const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const fetchTasks = useCallback(async () => {
     // Note: This does not cancel in-flight requests on unmount. For production,
@@ -71,6 +86,44 @@ export default function TaskListScreen() {
       mounted = false;
     };
   }, [fetchTasks]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const saved = await getSavedTeamId();
+      if (!mounted) return;
+      setTeamId(saved);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!teamId?.trim()) {
+      setCompletedTaskIds(new Set());
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      try {
+        const list = await httpJson<SubmissionListItem[]>(
+          apiUrl(`/submissions/?team_id=${encodeURIComponent(teamId.trim())}`),
+        );
+        const next = new Set<string>();
+        for (const s of Array.isArray(list) ? list : []) {
+          const tid = typeof s?.task_id === 'string' ? s.task_id.trim() : '';
+          if (tid) next.add(tid);
+        }
+        if (mounted) setCompletedTaskIds(next);
+      } catch {
+        if (mounted) setCompletedTaskIds(new Set());
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [teamId]);
 
   const onRetry = useCallback(async () => {
     setIsLoading(true);
@@ -109,7 +162,7 @@ export default function TaskListScreen() {
       loadingLabel="Loading tasks…"
     >
       <View style={[screenStyles.container, { backgroundColor }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
           <View style={styles.headerTopRow}>
             <SapsutLogo width={120} height={54} />
           </View>
@@ -131,6 +184,14 @@ export default function TaskListScreen() {
           refreshing={isRefreshing}
           onRefresh={onRefresh}
           renderItem={({ item }) => {
+            const nowMs = Date.now();
+            const opensMs = item.opens_at ? Date.parse(item.opens_at) : NaN;
+            const isNew =
+              Number.isFinite(opensMs) &&
+              opensMs <= nowMs &&
+              nowMs - opensMs <= NEW_WINDOW_MS;
+            const isCompleted = completedTaskIds.has(String(item.id));
+
             return (
               <Pressable
                 onPress={() =>
@@ -155,16 +216,43 @@ export default function TaskListScreen() {
                   >
                     {item.title}
                   </Text>
-                  <View style={[styles.pill, { borderColor: tint }]}>
-                    <Text
-                      style={[
-                        textStyles.defaultSemiBold,
-                        styles.pillText,
-                        { color: tint },
-                      ]}
-                    >
-                      {item.max_points} pts
-                    </Text>
+                  <View style={styles.pillRow}>
+                    {isCompleted ? (
+                      <View style={[styles.pill, { borderColor: tint }]}>
+                        <Text
+                          style={[
+                            textStyles.defaultSemiBold,
+                            styles.pillText,
+                            { color: tint },
+                          ]}
+                        >
+                          Completed
+                        </Text>
+                      </View>
+                    ) : isNew ? (
+                      <View style={[styles.pill, { borderColor: border }]}>
+                        <Text
+                          style={[
+                            textStyles.defaultSemiBold,
+                            styles.pillText,
+                            { color: textColor },
+                          ]}
+                        >
+                          New
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View style={[styles.pill, { borderColor: tint }]}>
+                      <Text
+                        style={[
+                          textStyles.defaultSemiBold,
+                          styles.pillText,
+                          { color: tint },
+                        ]}
+                      >
+                        {item.max_points} pts
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -270,6 +358,11 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flex: 1,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
   },
   pill: {
     borderWidth: 1,
