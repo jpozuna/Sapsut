@@ -19,8 +19,10 @@ export function AppErrorBoundary({
         <AppErrorState
           error={toAppError(error)}
           onRetry={() => {
+            // Avoid double-reset loops:
+            // - `resetErrorBoundary()` triggers ErrorBoundary's `onReset`
+            // - calling `onResetToSafeRoute` here would fire it twice
             resetErrorBoundary();
-            onResetToSafeRoute?.();
           }}
           titleOverride="App error"
         />
