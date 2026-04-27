@@ -15,12 +15,13 @@ The Solution Sapsut solves this by bringing AI into the equation. Teams submit p
 Sapsut transforms Husky Hunt from a 24-hour sprint with a weeks-long wait into an experience with a real finish line. Same-day results mean the awards ceremony happens while the energy is still alive. Teams are incentived to cross the finish line knowing it meant something. The grueling 24 hours becomes worth it when the payoff is immediate, and the drawn-out process that killed motivation is gone.
 
 ## Demo
+
 [https://drive.google.com/file/d/1LMcKjvp_Rk_65xzyr0C0og7QVOUPawNl/view?usp=sharing](https://drive.google.com/file/d/1LMcKjvp_Rk_65xzyr0C0og7QVOUPawNl/view?usp=sharing)
 
 ## Quick Tidbit:
+
 - **Branding + story**
   - **Sapsut** references a husky whose father was part of the renowned dog-sled team that delivered emergency medicine to remote communities in Alaska (around 674 mile journey). This was national news throughout the country and his son was brought to Northeastern’s campus in 1927 when the school took on the Husky mascot.
-
 
 ## AI integration
 
@@ -61,16 +62,15 @@ Confidence thresholds are configurable via environment variables:
 - **Feasibility + scope shaping**
   - Used AI early to check feasibility against my current skills/time constraints.
   - Refined the feature list into a concise, shippable flow and bucketed work into **MVP / Nice-to-haves / Out of scope**.
-  **Other Brand Identity Aspects**
+    **Other Brand Identity Aspects**
   - AI helped explore direction for **logo, typeface, and colors** after I provided the name and history.
 - **System design acceleration**
   - Used AI to generate a draft **database schema**, **tech stack**, and a **data dictionary**, then iterated to match the actual product flow.
   - Used AI to create **seed data** for faster UI + API iteration.
 - **Tooling + automation**
   - Connected **Supabase** as an MCP server inside Cursor to speed up iteration.
-  - Used AI to help create and refine **GitHub issues**, draft PR descriptions, and review PRs. 
+  - Used AI to help create and refine **GitHub issues**, draft PR descriptions, and review PRs.
   - Set up **CI/CD** with AI assistance (initial pipeline + iteration).
-
 
 ## Architecture / design decisions
 
