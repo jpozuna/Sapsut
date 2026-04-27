@@ -5,6 +5,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 
+from postgrest.exceptions import APIError
+
 from auth.organizer import require_organizer
 from services import get_supabase
 from services.scoring import score_submission
@@ -92,6 +94,17 @@ async def create_submission(
     photo_path: str = Form(None),
     photo: UploadFile = File(None),
 ):
+    # Validate ids early; PostgREST returns a 500 if we send non-UUID text into uuid columns.
+    try:
+        uuid.UUID(str(task_id))
+    except Exception:
+        raise HTTPException(status_code=400, detail="task_id must be a UUID")
+
+    try:
+        uuid.UUID(str(team_id))
+    except Exception:
+        raise HTTPException(status_code=400, detail="team_id must be a UUID")
+
     submission_id = str(uuid.uuid4())
     supabase = get_supabase()
 
@@ -143,7 +156,8 @@ async def create_submission(
                 lambda: supabase.storage.from_(storage_bucket()).upload(
                     stored_photo_path,
                     photo_bytes,
-                    file_options={"content-type": content_type, "upsert": True},
+                    # supabase-py passes these through to HTTP headers; values must be strings.
+                    file_options={"content-type": content_type, "upsert": "true"},
                 )
             )
         except Exception as e:
@@ -158,7 +172,11 @@ async def create_submission(
                 "rationale": f"Photo upload failed: {e}",
                 "ai_result": {"mode": "storage_upload", "error": str(e)},
             }
-            supabase.table("submissions").insert(submission).execute()
+            try:
+                supabase.table("submissions").insert(submission).execute()
+            except Exception:
+                # Don't mask the storage error with a DB insert failure.
+                pass
             return {"submission_id": submission_id, "status": "error"}
 
     submission = {
@@ -170,7 +188,16 @@ async def create_submission(
         "photo_url": stored_photo_path,
         "status": "pending"
     }
-    supabase.table("submissions").insert(submission).execute()
+    try:
+        supabase.table("submissions").insert(submission).execute()
+    except APIError as e:
+        # Convert common PostgREST errors into a client-friendly 4xx.
+        msg = ""
+        try:
+            msg = (e.args[0] or {}).get("message") or ""
+        except Exception:
+            msg = ""
+        raise HTTPException(status_code=400, detail=msg or "Invalid submission payload")
     
     background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, stored_photo_path, False)
     
