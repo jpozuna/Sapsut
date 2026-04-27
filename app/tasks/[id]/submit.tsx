@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,7 +15,6 @@ import { Image } from 'expo-image';
 import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
-import { uploadSubmissionPhoto } from '@/lib/storage';
 import { getSavedTeamId, saveTeamId } from '@/lib/team-session';
 
 type Task = {
@@ -29,6 +29,14 @@ type CreateSubmissionOk = { submission_id: string; status: string };
 type CreateSubmissionError = { error: string; existing_submission_id?: string };
 type CreateSubmissionResponse = CreateSubmissionOk | CreateSubmissionError;
 
+function displayAssetLabel(asset: ImagePicker.ImagePickerAsset): string {
+  const name = asset.fileName?.trim();
+  if (name) return name;
+  const uri = asset.uri ?? '';
+  const last = uri.split('?')[0]?.split('#')[0]?.split('/').pop()?.trim();
+  return last || 'selected photo';
+}
+
 export default function TaskSubmitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, textColor, backgroundColor, border, tint } = useAppTheme();
@@ -41,8 +49,6 @@ export default function TaskSubmitScreen() {
   const [textAnswer, setTextAnswer] = useState('');
   const [photoAsset, setPhotoAsset] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
-  const [photoPath, setPhotoPath] = useState<string | null>(null);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,7 +129,6 @@ export default function TaskSubmitScreen() {
   const onPickPhoto = useCallback(async () => {
     setSubmitError(null);
     setSubmitSuccessId(null);
-    setPhotoPath(null);
 
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -144,7 +149,6 @@ export default function TaskSubmitScreen() {
   const onTakePhoto = useCallback(async () => {
     setSubmitError(null);
     setSubmitSuccessId(null);
-    setPhotoPath(null);
 
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
@@ -172,7 +176,6 @@ export default function TaskSubmitScreen() {
 
   const onRemovePhoto = useCallback(() => {
     setPhotoAsset(null);
-    setPhotoPath(null);
   }, []);
 
   const onSubmit = useCallback(async () => {
@@ -183,29 +186,6 @@ export default function TaskSubmitScreen() {
 
     try {
       await saveTeamId(teamId);
-      let uploadedPath: string | null = photoPath;
-
-      if (photoAsset && !uploadedPath) {
-        setIsUploadingPhoto(true);
-        try {
-          const { path } = await uploadSubmissionPhoto({
-            asset: photoAsset,
-            teamId,
-            taskId,
-          });
-          uploadedPath = path;
-          setPhotoPath(path);
-        } catch (e) {
-          setSubmitError(
-            e instanceof Error
-              ? e.message
-              : 'Photo upload failed. Please try again.',
-          );
-          return;
-        } finally {
-          setIsUploadingPhoto(false);
-        }
-      }
 
       const fd = new FormData();
       fd.append('task_id', taskId);
@@ -215,8 +195,17 @@ export default function TaskSubmitScreen() {
         fd.append('text_answer', textAnswer);
       }
 
-      if (uploadedPath) {
-        fd.append('photo_path', uploadedPath);
+      if (photoAsset?.uri) {
+        // Prefer uploading via backend (works reliably in simulators and avoids direct Storage connectivity).
+        // FastAPI accepts this as UploadFile via the `photo` field.
+        const name =
+          photoAsset.fileName?.trim() ||
+          `submission-${taskId}-${Date.now()}.jpg`;
+        const type = photoAsset.mimeType?.trim() || 'image/jpeg';
+        fd.append(
+          'photo',
+          { uri: photoAsset.uri, name, type } as unknown as Blob,
+        );
       }
 
       const res = await fetch(apiUrl('/submissions/'), {
@@ -236,7 +225,15 @@ export default function TaskSubmitScreen() {
       }
 
       if (!res.ok) {
-        setSubmitError('Submission failed. Please try again.');
+        setSubmitError(
+          body && typeof body === 'object'
+            ? 'error' in body && typeof body.error === 'string' && body.error
+              ? body.error
+              : 'detail' in body && typeof body.detail === 'string' && body.detail
+                ? body.detail
+                : 'Submission failed. Please try again.'
+            : 'Submission failed. Please try again.',
+        );
         return;
       }
 
@@ -266,16 +263,34 @@ export default function TaskSubmitScreen() {
         e instanceof Error ? e.message : 'Submission failed. Please try again.',
       );
     } finally {
-      setIsUploadingPhoto(false);
       setIsSubmitting(false);
     }
-  }, [canSubmit, photoAsset, photoPath, taskId, teamId, textAnswer]);
+  }, [canSubmit, photoAsset, taskId, teamId, textAnswer]);
+
+  const onBackToTasks = useCallback(() => {
+    router.replace('/(tabs)/index');
+  }, []);
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Submit', headerBackTitle: 'Tasks' }} />
+      <Stack.Screen
+        options={{
+          title: 'Submit',
+          headerBackTitle: 'Tasks',
+          headerLeft: () => (
+            <Pressable onPress={onBackToTasks} style={styles.headerBack}>
+              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                Back
+              </Text>
+            </Pressable>
+          ),
+        }}
+      />
       <View style={[screenStyles.container, { backgroundColor }]}>
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={[textStyles.title, { color: textColor }]}>
             Submission
           </Text>
@@ -439,8 +454,10 @@ export default function TaskSubmitScreen() {
                       styles.hint,
                       { color: textColor },
                     ]}
+                    numberOfLines={2}
+                    ellipsizeMode="middle"
                   >
-                    Selected: {photoAsset.fileName ?? photoAsset.uri}
+                    Selected: {displayAssetLabel(photoAsset)}
                   </Text>
                   <View style={styles.previewFrame}>
                     <Image
@@ -450,36 +467,6 @@ export default function TaskSubmitScreen() {
                       accessibilityLabel="Selected photo preview"
                     />
                   </View>
-                  {photoPath ? (
-                    <Text
-                      style={[
-                        textStyles.default,
-                        styles.hint,
-                        { color: textColor },
-                      ]}
-                    >
-                      Uploaded path:{' '}
-                      <Text
-                        style={[
-                          textStyles.defaultSemiBold,
-                          { color: textColor },
-                        ]}
-                      >
-                        {photoPath}
-                      </Text>
-                    </Text>
-                  ) : null}
-                  {isUploadingPhoto ? (
-                    <Text
-                      style={[
-                        textStyles.default,
-                        styles.hint,
-                        { color: textColor },
-                      ]}
-                    >
-                      Uploading photo…
-                    </Text>
-                  ) : null}
                 </>
               ) : (
                 <Text
@@ -531,15 +518,20 @@ export default function TaskSubmitScreen() {
               {isSubmitting ? 'Submitting…' : 'Submit'}
             </Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  headerBack: {
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+  },
   content: {
     gap: 8,
+    paddingBottom: 24,
   },
   taskHeader: {
     gap: 4,
