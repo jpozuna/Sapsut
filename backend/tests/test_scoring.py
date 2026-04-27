@@ -24,6 +24,27 @@ def test_threshold_clamped(monkeypatch, raw, expected):
     assert scoring._auto_approve_threshold() == expected
 
 
+def test_max_score_threshold_default(monkeypatch):
+    monkeypatch.delenv("AUTO_APPROVE_MAX_SCORE_CONFIDENCE_THRESHOLD", raising=False)
+    assert scoring._auto_approve_max_score_threshold() == 0.95
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("0.8", 0.8),
+        ("0.9", 0.9),
+        ("1.0", 1.0),
+        ("0.1", 0.8),  # clamp low
+        ("2.0", 1.0),  # clamp high
+        ("not-a-number", 0.95),  # fallback
+    ],
+)
+def test_max_score_threshold_clamped(monkeypatch, raw, expected):
+    monkeypatch.setenv("AUTO_APPROVE_MAX_SCORE_CONFIDENCE_THRESHOLD", raw)
+    assert scoring._auto_approve_max_score_threshold() == expected
+
+
 def test_parse_score_json_valid():
     res = scoring._parse_score_json('{"score": 3, "confidence": 0.92, "rationale": "ok"}', max_points=5)
     assert res.score == 3
