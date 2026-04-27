@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenState } from '@/components/screen-state';
 import { SapsutLogo } from '@/components/sapsut-logo';
+import { AppCard, AppChip } from '@/components/ui';
 import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
@@ -25,9 +26,15 @@ type SubmissionListItem = {
   id: string;
   task_id?: string | null;
   team_id?: string | null;
+  status?: string | null;
 };
 
 const NEW_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function normalizeStatus(raw: unknown): string {
+  const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return s || 'pending';
+}
 
 function isTaskOpenNow(task: Task, nowMs: number): boolean {
   const opensMs = task.opens_at ? Date.parse(task.opens_at) : NaN;
@@ -50,8 +57,12 @@ function formatSubmissionType(type: Task['type']): string {
   }
 }
 
+function submissionTone(type: Task['type']): 'default' | 'accent' {
+  return type === 'photo' || type === 'combo' ? 'accent' : 'default';
+}
+
 export default function TaskListScreen() {
-  const { textColor, backgroundColor, border, tint } = useAppTheme();
+  const { textColor, backgroundColor } = useAppTheme();
   const insets = useSafeAreaInsets();
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -59,9 +70,9 @@ export default function TaskListScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(undefined);
   const [teamId, setTeamId] = useState<string | null>(null);
-  const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [taskSubmissionByTaskId, setTaskSubmissionByTaskId] = useState<
+    Record<string, { id: string; status: string }>
+  >({});
 
   const fetchTasks = useCallback(async () => {
     // Note: This does not cancel in-flight requests on unmount. For production,
@@ -101,7 +112,7 @@ export default function TaskListScreen() {
 
   useEffect(() => {
     if (!teamId?.trim()) {
-      setCompletedTaskIds(new Set());
+      setTaskSubmissionByTaskId({});
       return;
     }
     let mounted = true;
@@ -110,14 +121,17 @@ export default function TaskListScreen() {
         const list = await httpJson<SubmissionListItem[]>(
           apiUrl(`/submissions/?team_id=${encodeURIComponent(teamId.trim())}`),
         );
-        const next = new Set<string>();
+        const next: Record<string, { id: string; status: string }> = {};
         for (const s of Array.isArray(list) ? list : []) {
           const tid = typeof s?.task_id === 'string' ? s.task_id.trim() : '';
-          if (tid) next.add(tid);
+          if (!tid) continue;
+          // The backend returns newest-first; keep the first (latest) submission per task.
+          if (next[tid]) continue;
+          next[tid] = { id: String(s.id), status: normalizeStatus(s.status) };
         }
-        if (mounted) setCompletedTaskIds(next);
+        if (mounted) setTaskSubmissionByTaskId(next);
       } catch {
-        if (mounted) setCompletedTaskIds(new Set());
+        if (mounted) setTaskSubmissionByTaskId({});
       }
     })();
     return () => {
@@ -190,69 +204,59 @@ export default function TaskListScreen() {
               Number.isFinite(opensMs) &&
               opensMs <= nowMs &&
               nowMs - opensMs <= NEW_WINDOW_MS;
-            const isCompleted = completedTaskIds.has(String(item.id));
+
+            const submission = taskSubmissionByTaskId[String(item.id)];
+            const status = submission?.status ?? null;
+            const isInReview = status === 'flagged';
+            const isCompleted =
+              status === 'auto_approved' ||
+              status === 'approved' ||
+              status === 'reviewed';
+            const isSubmittedButNotComplete = Boolean(submission) && !isCompleted;
+            const isDisabled = isCompleted;
 
             return (
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: '/tasks/[id]/submit',
-                    params: { id: String(item.id) },
-                  })
+              <AppCard
+                onPress={
+                  isDisabled
+                    ? undefined
+                    : isSubmittedButNotComplete
+                      ? () =>
+                          router.push({
+                            pathname: '/submissions/[id]',
+                            params: { id: submission?.id ?? '' },
+                          })
+                      : () =>
+                          router.push({
+                            pathname: '/tasks/[id]/submit',
+                            params: { id: String(item.id) },
+                          })
                 }
-                style={({ pressed }) => [
-                  styles.card,
-                  { borderColor: border },
-                  pressed ? styles.cardPressed : null,
-                ]}
+                disabled={isDisabled}
+                style={[styles.card, isDisabled ? styles.cardDisabled : null]}
+                contentStyle={styles.cardContent}
               >
                 <View style={styles.cardHeader}>
                   <Text
                     style={[
                       textStyles.subtitle,
                       styles.cardTitle,
-                      { color: textColor },
+                      { color: textColor, opacity: isDisabled ? 0.45 : 1 },
                     ]}
                   >
                     {item.title}
                   </Text>
-                  <View style={styles.pillRow}>
+                  <View style={styles.chipRow}>
                     {isCompleted ? (
-                      <View style={[styles.pill, { borderColor: tint }]}>
-                        <Text
-                          style={[
-                            textStyles.defaultSemiBold,
-                            styles.pillText,
-                            { color: tint },
-                          ]}
-                        >
-                          Completed
-                        </Text>
-                      </View>
+                      <AppChip tone="accent" selected>
+                        Completed
+                      </AppChip>
+                    ) : isInReview ? (
+                      <AppChip tone="danger">In review</AppChip>
                     ) : isNew ? (
-                      <View style={[styles.pill, { borderColor: border }]}>
-                        <Text
-                          style={[
-                            textStyles.defaultSemiBold,
-                            styles.pillText,
-                            { color: textColor },
-                          ]}
-                        >
-                          New
-                        </Text>
-                      </View>
+                      <AppChip>New</AppChip>
                     ) : null}
-                    <View style={[styles.pill, { borderColor: tint }]}>
-                      <Text
-                        style={[
-                          textStyles.defaultSemiBold,
-                          styles.pillText,
-                          { color: tint },
-                        ]}
-                      >
-                        {item.max_points} pts
-                      </Text>
-                    </View>
+                    <AppChip tone="accent">{item.max_points} pts</AppChip>
                   </View>
                 </View>
 
@@ -261,34 +265,19 @@ export default function TaskListScreen() {
                     style={[
                       textStyles.default,
                       styles.description,
-                      { color: textColor },
+                      { color: textColor, opacity: isDisabled ? 0.45 : 0.9 },
                     ]}
                   >
                     {item.description}
                   </Text>
                 ) : null}
 
-                <View style={styles.metaRow}>
-                  <Text
-                    style={[
-                      textStyles.defaultSemiBold,
-                      styles.metaLabel,
-                      { color: textColor },
-                    ]}
-                  >
-                    Submission:
-                  </Text>
-                  <Text
-                    style={[
-                      textStyles.default,
-                      styles.metaValue,
-                      { color: textColor },
-                    ]}
-                  >
+                <View style={styles.submissionRow}>
+                  <AppChip tone={submissionTone(item.type)}>
                     {formatSubmissionType(item.type)}
-                  </Text>
+                  </AppChip>
                 </View>
-              </Pressable>
+              </AppCard>
             );
           }}
           ListEmptyComponent={
@@ -341,14 +330,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   card: {
-    borderWidth: 1,
     borderRadius: 16,
+  },
+  cardDisabled: {
+    opacity: 0.65,
+  },
+  cardContent: {
     padding: 14,
     gap: 10,
-  },
-  cardPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.99 }],
   },
   cardHeader: {
     flexDirection: 'row',
@@ -359,33 +348,17 @@ const styles = StyleSheet.create({
   cardTitle: {
     flex: 1,
   },
-  pillRow: {
+  chipRow: {
     flexDirection: 'row',
     gap: 8,
     alignItems: 'center',
   },
-  pill: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  pillText: {
-    fontSize: 13,
-  },
   description: {
     opacity: 0.9,
   },
-  metaRow: {
+  submissionRow: {
     flexDirection: 'row',
-    gap: 6,
     alignItems: 'center',
-  },
-  metaLabel: {
-    opacity: 0.85,
-  },
-  metaValue: {
-    opacity: 0.85,
   },
   empty: {
     alignItems: 'center',
