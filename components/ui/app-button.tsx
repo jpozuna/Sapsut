@@ -23,7 +23,11 @@ export function AppButton({
   labelStyle,
 }: AppButtonProps) {
   const mode: 'contained' | 'outlined' | 'text' =
-    tone === 'primary' ? 'contained' : tone === 'secondary' ? 'outlined' : 'text';
+    tone === 'primary'
+      ? 'contained'
+      : tone === 'secondary'
+        ? 'outlined'
+        : 'text';
 
   return (
     <Button
@@ -52,4 +56,3 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
-

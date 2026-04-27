@@ -121,7 +121,8 @@ def app_and_client(monkeypatch):
 
     fake = _FakeSupabase()
     # Default: allow multiple to avoid the existing-submission branch.
-    fake.db["tasks"].append({"id": "task1", "allow_multiple_submissions": True})
+    task_id = "11111111-1111-1111-1111-111111111111"
+    fake.db["tasks"].append({"id": task_id, "allow_multiple_submissions": True})
 
     monkeypatch.setattr(submissions_routes, "get_supabase", lambda: fake)
     monkeypatch.setattr(submissions_routes, "score_submission", lambda *a, **kw: None)
@@ -133,6 +134,8 @@ def app_and_client(monkeypatch):
 
 def test_post_submission_photo_upload_path_format(app_and_client, monkeypatch):
     fake, client = app_and_client
+    task_id = "11111111-1111-1111-1111-111111111111"
+    team_id = "22222222-2222-2222-2222-222222222222"
 
     fixed_id = _uuid.UUID("00000000-0000-0000-0000-000000000123")
     from routes import submissions as submissions_routes
@@ -141,7 +144,7 @@ def test_post_submission_photo_upload_path_format(app_and_client, monkeypatch):
 
     resp = client.post(
         "/submissions/",
-        data={"task_id": "task1", "team_id": "teamA", "text_answer": ""},
+        data={"task_id": task_id, "team_id": team_id, "text_answer": ""},
         files={"photo": ("x.png", b"pngbytes", "image/png")},
     )
     assert resp.status_code == 200
@@ -151,7 +154,7 @@ def test_post_submission_photo_upload_path_format(app_and_client, monkeypatch):
 
     assert fake.upload_calls, "expected storage upload to be called"
     uploaded_path, uploaded_bytes, file_options = fake.upload_calls[0]
-    assert uploaded_path == f"teamA/task1/{fixed_id}.png"
+    assert uploaded_path == f"{team_id}/{task_id}/{fixed_id}.png"
     assert uploaded_bytes == b"pngbytes"
     assert file_options["content-type"] == "image/png"
 
@@ -164,6 +167,8 @@ def test_post_submission_photo_upload_path_format(app_and_client, monkeypatch):
 def test_post_submission_upload_failure_sets_error_status(app_and_client, monkeypatch):
     fake, client = app_and_client
     fake.fail_upload = True
+    task_id = "11111111-1111-1111-1111-111111111111"
+    team_id = "22222222-2222-2222-2222-222222222222"
 
     fixed_id = _uuid.UUID("00000000-0000-0000-0000-000000000999")
     from routes import submissions as submissions_routes
@@ -172,7 +177,7 @@ def test_post_submission_upload_failure_sets_error_status(app_and_client, monkey
 
     resp = client.post(
         "/submissions/",
-        data={"task_id": "task1", "team_id": "teamA", "text_answer": "hi"},
+        data={"task_id": task_id, "team_id": team_id, "text_answer": "hi"},
         files={"photo": ("x.jpg", b"jpgbytes", "image/jpeg")},
     )
     assert resp.status_code == 200
@@ -187,13 +192,15 @@ def test_post_submission_upload_failure_sets_error_status(app_and_client, monkey
 
 def test_get_submission_by_id_includes_signed_url_when_photo_exists(app_and_client):
     fake, client = app_and_client
+    task_id = "11111111-1111-1111-1111-111111111111"
+    team_id = "22222222-2222-2222-2222-222222222222"
     fake.db["submissions"].append(
         {
             "id": "sub1",
-            "task_id": "task1",
-            "team_id": "teamA",
+            "task_id": task_id,
+            "team_id": team_id,
             "text_answer": "",
-            "photo_url": "teamA/task1/sub1.png",
+            "photo_url": f"{team_id}/{task_id}/sub1.png",
             "status": "approved",
             "score": 3,
             "confidence": 0.95,
@@ -208,21 +215,23 @@ def test_get_submission_by_id_includes_signed_url_when_photo_exists(app_and_clie
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == "sub1"
-    assert data["photo_url"] == "teamA/task1/sub1.png"
+    assert data["photo_url"] == f"{team_id}/{task_id}/sub1.png"
     assert data["photo_signed_url"].startswith("https://signed.example/")
-    assert fake.sign_calls == [("teamA/task1/sub1.png", 600)]
+    assert fake.sign_calls == [(f"{team_id}/{task_id}/sub1.png", 600)]
 
 
 def test_list_submissions_omits_signed_urls(app_and_client):
     fake, client = app_and_client
+    task_id = "11111111-1111-1111-1111-111111111111"
+    team_id = "22222222-2222-2222-2222-222222222222"
     fake.db["submissions"].extend(
         [
             {
                 "id": "sub1",
-                "task_id": "task1",
-                "team_id": "teamA",
+                "task_id": task_id,
+                "team_id": team_id,
                 "text_answer": "",
-                "photo_url": "teamA/task1/sub1.png",
+                "photo_url": f"{team_id}/{task_id}/sub1.png",
                 "status": "approved",
                 "score": 3,
                 "confidence": 0.95,
@@ -234,7 +243,7 @@ def test_list_submissions_omits_signed_urls(app_and_client):
             {
                 "id": "sub2",
                 "task_id": "task2",
-                "team_id": "teamA",
+                "team_id": team_id,
                 "text_answer": "hi",
                 "photo_url": None,
                 "status": "pending",
@@ -248,7 +257,7 @@ def test_list_submissions_omits_signed_urls(app_and_client):
         ]
     )
 
-    resp = client.get("/submissions/?team_id=teamA")
+    resp = client.get(f"/submissions/?team_id={team_id}")
     assert resp.status_code == 200
     rows = resp.json()
     assert isinstance(rows, list)

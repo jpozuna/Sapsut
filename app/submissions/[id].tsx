@@ -135,7 +135,7 @@ export default function SubmissionConfirmationScreen() {
 
   const onBackToTasks = useCallback(() => {
     // Avoid routing to the group root (which can surface as a weird back label).
-    router.replace('/(tabs)/index');
+    router.replace('/(tabs)');
   }, []);
 
   const title = useMemo(() => {

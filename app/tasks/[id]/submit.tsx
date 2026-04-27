@@ -202,10 +202,11 @@ export default function TaskSubmitScreen() {
           photoAsset.fileName?.trim() ||
           `submission-${taskId}-${Date.now()}.jpg`;
         const type = photoAsset.mimeType?.trim() || 'image/jpeg';
-        fd.append(
-          'photo',
-          { uri: photoAsset.uri, name, type } as unknown as Blob,
-        );
+        fd.append('photo', {
+          uri: photoAsset.uri,
+          name,
+          type,
+        } as unknown as Blob);
       }
 
       const res = await fetch(apiUrl('/submissions/'), {
@@ -229,7 +230,9 @@ export default function TaskSubmitScreen() {
           body && typeof body === 'object'
             ? 'error' in body && typeof body.error === 'string' && body.error
               ? body.error
-              : 'detail' in body && typeof body.detail === 'string' && body.detail
+              : 'detail' in body &&
+                  typeof body.detail === 'string' &&
+                  body.detail
                 ? body.detail
                 : 'Submission failed. Please try again.'
             : 'Submission failed. Please try again.',
@@ -268,7 +271,7 @@ export default function TaskSubmitScreen() {
   }, [canSubmit, photoAsset, taskId, teamId, textAnswer]);
 
   const onBackToTasks = useCallback(() => {
-    router.replace('/(tabs)/index');
+    router.replace('/(tabs)');
   }, []);
 
   return (

@@ -53,7 +53,7 @@ export default function SettingsScreen() {
 
   const onSwitchToParticipant = useCallback(() => {
     exitOrganizerMode();
-    router.replace('/(tabs)/index');
+    router.replace('/(tabs)');
   }, [exitOrganizerMode]);
 
   return (

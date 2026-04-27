@@ -212,7 +212,8 @@ export default function TaskListScreen() {
               status === 'auto_approved' ||
               status === 'approved' ||
               status === 'reviewed';
-            const isSubmittedButNotComplete = Boolean(submission) && !isCompleted;
+            const isSubmittedButNotComplete =
+              Boolean(submission) && !isCompleted;
             const isDisabled = isCompleted;
 
             return (
@@ -256,7 +257,7 @@ export default function TaskListScreen() {
                     ) : isNew ? (
                       <AppChip>New</AppChip>
                     ) : null}
-                    <AppChip tone="accent">{item.max_points} pts</AppChip>
+                    <AppChip tone="accent">{`${item.max_points} pts`}</AppChip>
                   </View>
                 </View>
 

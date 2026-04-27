@@ -48,7 +48,7 @@ export function AppErrorState({
   const handleGoBack =
     onGoBack ?? (canGoBack ? () => router.back() : undefined);
   const primaryAction =
-    onRetry ?? handleGoBack ?? (() => router.replace('/(tabs)/index'));
+    onRetry ?? handleGoBack ?? (() => router.replace('/(tabs)'));
 
   const primaryLabel = onRetry ? 'Retry' : handleGoBack ? 'Go back' : 'Go home';
 

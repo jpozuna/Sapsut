@@ -1,10 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -213,7 +208,11 @@ export default function LeaderboardScreen() {
               >
                 Once teams join and score points, they’ll show up here.
               </Text>
-              <AppButton tone="secondary" onPress={onRetry} style={styles.retryButton}>
+              <AppButton
+                tone="secondary"
+                onPress={onRetry}
+                style={styles.retryButton}
+              >
                 Refresh
               </AppButton>
             </View>

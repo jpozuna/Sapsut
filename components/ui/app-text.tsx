@@ -25,4 +25,3 @@ export function AppText({ variant = 'body', style, children }: AppTextProps) {
     </Text>
   );
 }
-
