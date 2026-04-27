@@ -43,7 +43,7 @@ export default function SettingsScreen() {
     setIsModalOpen(false);
     setError(null);
     enterOrganizerMode(code);
-    router.push('/organizer/review');
+    router.push('/(tabs)/organizer');
   }, [codeDraft, enterOrganizerMode]);
 
   const onCancelOrganizer = useCallback(() => {
@@ -53,7 +53,7 @@ export default function SettingsScreen() {
 
   const onSwitchToParticipant = useCallback(() => {
     exitOrganizerMode();
-    router.replace('/(tabs)');
+    router.replace('/(tabs)/index');
   }, [exitOrganizerMode]);
 
   return (
