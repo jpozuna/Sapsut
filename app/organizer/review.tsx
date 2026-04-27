@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router } from 'expo-router';
 
 import { SafeScreen } from '@/components/safe-screen';
 import { textStyles, useAppTheme } from '@/lib/ui';
@@ -46,10 +46,10 @@ export default function OrganizerReviewDashboard() {
     // keep organizer code in session via RoleContext
     // navigation only; API calls still require entering/using the code field
     // (organizer code is prefilled on arrival)
-    router.push('/organizer/create-task');
+    router.push('/(tabs)/organizer');
   }, []);
   const goToHistory = useCallback(() => {
-    router.push('/organizer/history');
+    router.push('/(tabs)/organizer/history');
   }, []);
 
   const {
@@ -302,123 +302,116 @@ export default function OrganizerReviewDashboard() {
   );
 
   return (
-    <>
-      <Stack.Screen options={{ title: 'Organizer Review' }} />
-      <SafeScreen backgroundColor={backgroundColor}>
-        <View style={styles.navRow}>
-          <Pressable
-            onPress={goToCreate}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: border },
-              pressed ? styles.buttonPressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Create
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {}}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: tint, backgroundColor: tint },
-              pressed ? styles.buttonPressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
-              Review
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={goToHistory}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: border },
-              pressed ? styles.buttonPressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              History
-            </Text>
-          </Pressable>
+    <SafeScreen backgroundColor={backgroundColor}>
+      <View style={styles.navRow}>
+        <Pressable
+          onPress={goToCreate}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: border },
+            pressed ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Create
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {}}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: tint, backgroundColor: tint },
+            pressed ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
+            Review
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={goToHistory}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: border },
+            pressed ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            History
+          </Text>
+        </Pressable>
+      </View>
+      <View style={styles.header}>
+        <Text style={[textStyles.title, { color: textColor }]}>
+          Review Queue
+        </Text>
+        <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+          Enter organizer code to load flagged submissions.
+        </Text>
+      </View>
+
+      <View style={styles.codeRow}>
+        <TextInput
+          value={organizerCode}
+          onChangeText={setOrganizerCode}
+          placeholder="Organizer code"
+          placeholderTextColor={border}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          style={[
+            styles.codeInput,
+            { borderColor: border, color: colors.text },
+          ]}
+        />
+        <Pressable
+          onPress={loadQueue}
+          disabled={!canLoad || isLoading}
+          style={({ pressed }) => [
+            styles.loadButton,
+            { backgroundColor: canLoad && !isLoading ? tint : border },
+            pressed && canLoad && !isLoading ? styles.buttonPressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
+            {isLoading ? 'Loading…' : 'Load'}
+          </Text>
+        </Pressable>
+      </View>
+
+      {error ? (
+        <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
+          {error}
+        </Text>
+      ) : null}
+
+      {isLoading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color={tint} />
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Fetching review queue…
+          </Text>
         </View>
-        <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>
-            Review Queue
+      ) : rows.length === 0 && canLoad ? (
+        <View style={styles.emptyBox}>
+          <Text style={[textStyles.subtitle, { color: textColor }]}>
+            Queue clear
           </Text>
           <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Enter organizer code to load flagged submissions.
+            No flagged submissions right now.
           </Text>
         </View>
-
-        <View style={styles.codeRow}>
-          <TextInput
-            value={organizerCode}
-            onChangeText={setOrganizerCode}
-            placeholder="Organizer code"
-            placeholderTextColor={border}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            style={[
-              styles.codeInput,
-              { borderColor: border, color: colors.text },
-            ]}
-          />
-          <Pressable
-            onPress={loadQueue}
-            disabled={!canLoad || isLoading}
-            style={({ pressed }) => [
-              styles.loadButton,
-              { backgroundColor: canLoad && !isLoading ? tint : border },
-              pressed && canLoad && !isLoading ? styles.buttonPressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
-              {isLoading ? 'Loading…' : 'Load'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {error ? (
-          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
-            {error}
-          </Text>
-        ) : null}
-
-        {isLoading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator color={tint} />
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Fetching review queue…
-            </Text>
-          </View>
-        ) : rows.length === 0 && canLoad ? (
-          <View style={styles.emptyBox}>
-            <Text style={[textStyles.subtitle, { color: textColor }]}>
-              Queue clear
-            </Text>
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              No flagged submissions right now.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={rows}
-            keyExtractor={(r) => r.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.list}
-            refreshing={isLoading}
-            onRefresh={loadQueue}
-          />
-        )}
-      </SafeScreen>
-    </>
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(r) => r.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          refreshing={isLoading}
+          onRefresh={loadQueue}
+        />
+      )}
+    </SafeScreen>
   );
 }
 

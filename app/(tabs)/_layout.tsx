@@ -28,6 +28,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="organizer"
+        options={{
+          title: 'Organizer',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="sparkles" color={color} />
+          ),
+          // Hide unless in organizer mode.
+          href: role === 'organizer' ? undefined : null,
+        }}
+      />
+      <Tabs.Screen
         name="leaderboard"
         options={{
           title: 'Leaderboard',
@@ -43,17 +54,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="gearshape.fill" color={color} />
           ),
-        }}
-      />
-      <Tabs.Screen
-        name="organizer"
-        options={{
-          title: 'Organizer',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="sparkles" color={color} />
-          ),
-          // Hide unless in organizer mode.
-          href: role === 'organizer' ? undefined : null,
         }}
       />
     </Tabs>

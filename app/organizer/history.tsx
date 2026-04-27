@@ -5,10 +5,10 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { SafeScreen } from '@/components/safe-screen';
 import { toAppError } from '@/lib/app-error';
@@ -44,7 +44,7 @@ type ReviewHistoryRow = {
 };
 
 export default function OrganizerHistoryScreen() {
-  const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
+  const { textColor, backgroundColor, tint, border } = useAppTheme();
   const {
     role,
     organizerCode: sessionOrganizerCode,
@@ -104,6 +104,14 @@ export default function OrganizerHistoryScreen() {
     }
   }, [organizerCode]);
 
+  useFocusEffect(
+    useCallback(() => {
+      // Refresh whenever this screen becomes active so new approvals show up immediately.
+      if (!organizerCode.trim()) return;
+      loadHistory().catch(() => {});
+    }, [loadHistory, organizerCode]),
+  );
+
   useEffect(() => {
     setRows([]);
     setError(null);
@@ -116,11 +124,11 @@ export default function OrganizerHistoryScreen() {
     }
   }, [canLoad, loadHistory]);
 
-  const onGoToCreate = useCallback(
-    () => router.push('/organizer/create-task'),
+  const onGoToCreate = useCallback(() => router.push('/(tabs)/organizer'), []);
+  const onGoToReview = useCallback(
+    () => router.push('/(tabs)/organizer/review'),
     [],
   );
-  const onGoToReview = useCallback(() => router.push('/organizer/review'), []);
 
   const renderItem = useCallback(
     ({ item }: { item: ReviewHistoryRow }) => {
@@ -177,122 +185,97 @@ export default function OrganizerHistoryScreen() {
   );
 
   return (
-    <>
-      <Stack.Screen options={{ title: 'Organizer History' }} />
-      <SafeScreen backgroundColor={backgroundColor}>
-        <View style={styles.navRow}>
-          <Pressable
-            onPress={onGoToCreate}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: border },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Create
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onGoToReview}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: border },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Review
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {}}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: tint, backgroundColor: tint },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
-              History
-            </Text>
-          </Pressable>
-        </View>
+    <SafeScreen backgroundColor={backgroundColor}>
+      <View style={styles.navRow}>
+        <Pressable
+          onPress={onGoToCreate}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: border },
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Create
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={onGoToReview}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: border },
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Review
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {}}
+          style={({ pressed }) => [
+            styles.navPill,
+            { borderColor: tint, backgroundColor: tint },
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
+            History
+          </Text>
+        </Pressable>
+      </View>
 
-        <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>History</Text>
+      <View style={styles.header}>
+        <Text style={[textStyles.title, { color: textColor }]}>History</Text>
+        <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+          Decisions made by organizers (approve/override).
+        </Text>
+      </View>
+
+      {!canLoad ? (
+        <View style={styles.emptyBox}>
+          <Text style={[textStyles.subtitle, { color: textColor }]}>
+            Organizer code required
+          </Text>
           <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Decisions made by organizers (approve/override).
+            Set your organizer code in Settings to view history.
           </Text>
         </View>
+      ) : null}
 
-        <View style={styles.codeRow}>
-          <TextInput
-            value={organizerCode}
-            onChangeText={setOrganizerCode}
-            placeholder="Organizer code"
-            placeholderTextColor={border}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            style={[
-              styles.codeInput,
-              { borderColor: border, color: colors.text },
-            ]}
-          />
-          <Pressable
-            onPress={loadHistory}
-            disabled={!canLoad || isLoading}
-            style={({ pressed }) => [
-              styles.loadButton,
-              { backgroundColor: canLoad && !isLoading ? tint : border },
-              pressed && canLoad && !isLoading ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
-              {isLoading ? 'Loading…' : 'Load'}
-            </Text>
-          </Pressable>
-        </View>
+      {error ? (
+        <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
+          {error}
+        </Text>
+      ) : null}
 
-        {error ? (
-          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
-            {error}
+      {isLoading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color={tint} />
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Fetching history…
           </Text>
-        ) : null}
-
-        {isLoading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator color={tint} />
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Fetching history…
-            </Text>
-          </View>
-        ) : rows.length === 0 && canLoad ? (
-          <View style={styles.emptyBox}>
-            <Text style={[textStyles.subtitle, { color: textColor }]}>
-              No history yet
-            </Text>
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Approve/override something to populate this.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={rows}
-            keyExtractor={(r) => r.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.list}
-            refreshing={isLoading}
-            onRefresh={loadHistory}
-          />
-        )}
-      </SafeScreen>
-    </>
+        </View>
+      ) : rows.length === 0 && canLoad ? (
+        <View style={styles.emptyBox}>
+          <Text style={[textStyles.subtitle, { color: textColor }]}>
+            No history yet
+          </Text>
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Approve/override something to populate this.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(r) => r.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          refreshing={isLoading}
+          onRefresh={loadHistory}
+        />
+      )}
+    </SafeScreen>
   );
 }
 
@@ -309,22 +292,6 @@ const styles = StyleSheet.create({
   header: { gap: 6, marginBottom: 12 },
   hint: { opacity: 0.85 },
   errorText: { marginTop: 8, opacity: 0.95 },
-  codeRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  codeInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  loadButton: {
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  loadText: { color: 'white' },
   loadingBox: { marginTop: 18, gap: 10, alignItems: 'center' },
   emptyBox: { marginTop: 18, gap: 6, alignItems: 'center' },
   list: { paddingVertical: 12, gap: 12 },

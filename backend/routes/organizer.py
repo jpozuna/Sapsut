@@ -388,7 +388,7 @@ def list_review_history(limit: int = 100) -> Any:
     supabase = get_supabase()
     safe_limit = max(1, min(int(limit), 500))
     try:
-        return (
+        rows = (
             supabase.table("review_queue_history")
             .select(
                 "id,queue_id,submission_id,decision,final_score,final_rationale,suggested_score,suggested_rationale,created_at,"
@@ -400,9 +400,75 @@ def list_review_history(limit: int = 100) -> Any:
             .data
             or []
         )
+        # If the table exists and has rows, return it.
+        if rows:
+            return rows
     except Exception:
-        # If the table doesn't exist yet, return an empty history instead of 500'ing.
-        return []
+        rows = []
+
+    # Fallback: derive organizer history from `submissions.ai_result`, which is always
+    # written on approve/override/auto_approve.
+    try:
+        subs = (
+            supabase.table("submissions")
+            .select(
+                "id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,ai_result,created_at"
+            )
+            .order("created_at", desc=True)
+            .limit(max(50, safe_limit * 5))
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        subs = []
+
+    out: List[Dict[str, Any]] = []
+    for s in subs:
+        ai = s.get("ai_result") if isinstance(s, dict) else None
+        if not isinstance(ai, dict):
+            continue
+        mode = str(ai.get("mode") or "").strip()
+        if mode not in {"organizer_approve", "organizer_override", "auto_approve"}:
+            continue
+
+        decision = (
+            "approve"
+            if mode == "organizer_approve"
+            else "override"
+            if mode == "organizer_override"
+            else "auto_approve"
+        )
+        out.append(
+            {
+                "id": f"sub_{s.get('id')}",
+                "queue_id": ai.get("queue_id"),
+                "submission_id": s.get("id"),
+                "decision": decision,
+                "final_score": s.get("score"),
+                "final_rationale": s.get("rationale"),
+                "suggested_score": ai.get("suggested_score") if decision == "override" else s.get("score"),
+                "suggested_rationale": ai.get("suggested_rationale") if decision == "override" else s.get("rationale"),
+                "created_at": s.get("created_at"),
+                "submission": {
+                    "id": s.get("id"),
+                    "task_id": s.get("task_id"),
+                    "team_id": s.get("team_id"),
+                    "text_answer": s.get("text_answer"),
+                    "photo_url": s.get("photo_url"),
+                    "status": s.get("status"),
+                    "score": s.get("score"),
+                    "confidence": s.get("confidence"),
+                    "rationale": s.get("rationale"),
+                    "gpt4o_description": s.get("gpt4o_description"),
+                    "created_at": s.get("created_at"),
+                },
+            }
+        )
+        if len(out) >= safe_limit:
+            break
+
+    return out
 
 
 class RescoreIn(BaseModel):

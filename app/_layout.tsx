@@ -125,7 +125,7 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <PaperProvider theme={paperTheme}>
           <RoleProvider>
-            <Stack>
+            <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             </Stack>
             <StatusBar style="auto" />

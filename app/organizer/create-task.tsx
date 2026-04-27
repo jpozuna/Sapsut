@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -94,6 +94,12 @@ export default function OrganizerCreateTaskScreen() {
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState<'text' | 'photo' | 'combo'>('combo');
   const [maxPoints, setMaxPoints] = useState('10');
+
+  const [criteria, setCriteria] = useState<string[]>(['']);
+  const [isSavingCriteria, setIsSavingCriteria] = useState(false);
+  const [rubricOcrAsset, setRubricOcrAsset] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isOcring, setIsOcring] = useState(false);
 
   const [isCreating, setIsCreating] = useState(false);
   const [createStep, setCreateStep] = useState<string | null>(null);
@@ -252,12 +258,6 @@ export default function OrganizerCreateTaskScreen() {
     title,
   ]);
 
-  const [criteria, setCriteria] = useState<string[]>(['']);
-  const [isSavingCriteria, setIsSavingCriteria] = useState(false);
-  const [rubricOcrAsset, setRubricOcrAsset] =
-    useState<ImagePicker.ImagePickerAsset | null>(null);
-  const [isOcring, setIsOcring] = useState(false);
-
   const onPickRubricImage = useCallback(async () => {
     setError(null);
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -414,453 +414,369 @@ export default function OrganizerCreateTaskScreen() {
     }
   }, [createdTask?.id, loadPhotos, organizerCode, photoAsset]);
 
-  const onGoToReview = useCallback(() => router.push('/organizer/review'), []);
+  const onGoToReview = useCallback(
+    () => router.push('/(tabs)/organizer/review'),
+    [],
+  );
   const onGoToHistory = useCallback(
-    () => router.push('/organizer/history'),
+    () => router.push('/(tabs)/organizer/history'),
     [],
   );
 
   return (
-    <>
-      <Stack.Screen options={{ title: 'Organizer' }} />
-      <SafeScreen backgroundColor={backgroundColor}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.navRow}>
-            <Pressable
-              onPress={() => {}}
-              style={({ pressed }) => [
-                styles.navPill,
-                { borderColor: tint, backgroundColor: tint },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
-                Create
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={onGoToReview}
-              style={({ pressed }) => [
-                styles.navPill,
-                { borderColor: border },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Review
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={onGoToHistory}
-              style={({ pressed }) => [
-                styles.navPill,
-                { borderColor: border },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                History
-              </Text>
-            </Pressable>
-          </View>
-
-          <Text style={[textStyles.title, { color: textColor }]}>
-            Create task & Upload rubric
-          </Text>
-
-          <View style={styles.field}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Organizer code
-            </Text>
-            <TextInput
-              value={organizerCode}
-              onChangeText={setOrganizerCode}
-              placeholder="Organizer code"
-              placeholderTextColor={border}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              editable={!isCreating}
-              style={[
-                styles.input,
-                { borderColor: border, color: colors.text },
-              ]}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Title
-            </Text>
-            <TextInput
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Task title"
-              placeholderTextColor={border}
-              editable={!isCreating}
-              style={[
-                styles.input,
-                { borderColor: border, color: colors.text },
-              ]}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Description (optional)
-            </Text>
-            <TextInput
-              value={description}
-              onChangeText={setDescription}
-              placeholder="What should participants do?"
-              placeholderTextColor={border}
-              editable={!isCreating}
-              multiline
-              style={[
-                styles.textarea,
-                { borderColor: border, color: colors.text },
-              ]}
-            />
-          </View>
-
-          <View style={styles.row}>
-            <Pressable
-              onPress={() => setTaskType('text')}
-              style={({ pressed }) => [
-                styles.choice,
-                {
-                  borderColor: taskType === 'text' ? tint : border,
-                },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Text
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setTaskType('photo')}
-              style={({ pressed }) => [
-                styles.choice,
-                {
-                  borderColor: taskType === 'photo' ? tint : border,
-                },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Photo
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setTaskType('combo')}
-              style={({ pressed }) => [
-                styles.choice,
-                {
-                  borderColor: taskType === 'combo' ? tint : border,
-                },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Combo
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.field}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Max points
-            </Text>
-            <TextInput
-              value={maxPoints}
-              onChangeText={setMaxPoints}
-              placeholder="10"
-              placeholderTextColor={border}
-              keyboardType="number-pad"
-              editable={!isCreating}
-              style={[
-                styles.input,
-                { borderColor: border, color: colors.text },
-              ]}
-            />
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={[textStyles.subtitle, { color: textColor }]}>
-              Rubric (criteria)
-            </Text>
-            {!createdTask ? (
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                Create the task first to run OCR and save rubric.
-              </Text>
-            ) : null}
-          </View>
-
-          <View style={styles.row}>
-            <Pressable
-              onPress={onPickRubricImage}
-              disabled={isOcring}
-              style={({ pressed }) => [
-                styles.button,
-                { borderColor: tint },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Pick rubric image
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={onRunRubricOcr}
-              disabled={!createdTask || !rubricOcrAsset || isOcring}
-              style={({ pressed }) => [
-                styles.button,
-                {
-                  borderColor:
-                    createdTask && rubricOcrAsset && !isOcring ? tint : border,
-                },
-                pressed && createdTask && rubricOcrAsset
-                  ? styles.pressed
-                  : null,
-              ]}
-            >
-              <Text
-                style={[
-                  textStyles.defaultSemiBold,
-                  {
-                    color:
-                      createdTask && rubricOcrAsset && !isOcring
-                        ? tint
-                        : textColor,
-                  },
-                ]}
-              >
-                {isOcring ? 'Parsing…' : 'OCR rubric'}
-              </Text>
-            </Pressable>
-            {isOcring ? <ActivityIndicator color={tint} /> : null}
-          </View>
-          {rubricOcrAsset ? (
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Selected rubric image: {assetLabel(rubricOcrAsset)}
-            </Text>
-          ) : null}
-
-          {criteria.map((c, idx) => (
-            <View key={idx} style={styles.criteriaRow}>
-              <TextInput
-                value={c}
-                onChangeText={(t) =>
-                  setCriteria((prev) => prev.map((p, i) => (i === idx ? t : p)))
-                }
-                placeholder={`Criterion ${idx + 1}`}
-                placeholderTextColor={border}
-                editable={!isSavingCriteria}
-                style={[
-                  styles.input,
-                  { borderColor: border, color: colors.text, flex: 1 },
-                ]}
-              />
-              <Pressable
-                onPress={() =>
-                  setCriteria((prev) => prev.filter((_, i) => i !== idx))
-                }
-                disabled={criteria.length <= 1 || isSavingCriteria}
-                style={({ pressed }) => [
-                  styles.smallButton,
-                  { borderColor: border },
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  −
-                </Text>
-              </Pressable>
-            </View>
-          ))}
-
-          <View style={styles.row}>
-            <Pressable
-              onPress={() => setCriteria((prev) => [...prev, ''])}
-              disabled={isSavingCriteria}
-              style={({ pressed }) => [
-                styles.button,
-                { borderColor: tint },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Add criterion
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={onSaveCriteria}
-              disabled={!createdTask || isSavingCriteria}
-              style={({ pressed }) => [
-                styles.button,
-                { borderColor: createdTask ? tint : border },
-                pressed && createdTask ? styles.pressed : null,
-              ]}
-            >
-              <Text
-                style={[
-                  textStyles.defaultSemiBold,
-                  { color: createdTask ? tint : textColor },
-                ]}
-              >
-                {isSavingCriteria ? 'Saving…' : 'Save rubric'}
-              </Text>
-            </Pressable>
-          </View>
-
+    <SafeScreen backgroundColor={backgroundColor}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.navRow}>
           <Pressable
-            onPress={onCreateTask}
-            disabled={!canCreate}
+            onPress={() => {}}
             style={({ pressed }) => [
-              styles.primaryButton,
-              { backgroundColor: canCreate ? tint : border },
-              pressed && canCreate ? styles.pressed : null,
+              styles.navPill,
+              { borderColor: tint, backgroundColor: tint },
+              pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={[textStyles.defaultSemiBold, styles.primaryText]}>
-              {isCreating ? (createStep ?? 'Working…') : 'Create task'}
+            <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
+              Create
             </Text>
           </Pressable>
+          <Pressable
+            onPress={onGoToReview}
+            style={({ pressed }) => [
+              styles.navPill,
+              { borderColor: border },
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Review
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={onGoToHistory}
+            style={({ pressed }) => [
+              styles.navPill,
+              { borderColor: border },
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              History
+            </Text>
+          </Pressable>
+        </View>
 
-          {createdTask ? (
+        <Text style={[textStyles.title, { color: textColor }]}>
+          Create task & Upload rubric
+        </Text>
+
+        <View style={styles.field}>
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Organizer code
+          </Text>
+          <TextInput
+            value={organizerCode}
+            onChangeText={setOrganizerCode}
+            placeholder="Organizer code"
+            placeholderTextColor={border}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            editable={!isCreating}
+            style={[styles.input, { borderColor: border, color: colors.text }]}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Title
+          </Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Task title"
+            placeholderTextColor={border}
+            editable={!isCreating}
+            style={[styles.input, { borderColor: border, color: colors.text }]}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Description (optional)
+          </Text>
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            placeholder="What should participants do?"
+            placeholderTextColor={border}
+            editable={!isCreating}
+            multiline
+            style={[
+              styles.textarea,
+              { borderColor: border, color: colors.text },
+            ]}
+          />
+        </View>
+
+        <View style={styles.row}>
+          <Pressable
+            onPress={() => setTaskType('text')}
+            style={({ pressed }) => [
+              styles.choice,
+              {
+                borderColor: taskType === 'text' ? tint : border,
+              },
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Text
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTaskType('photo')}
+            style={({ pressed }) => [
+              styles.choice,
+              {
+                borderColor: taskType === 'photo' ? tint : border,
+              },
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Photo
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTaskType('combo')}
+            style={({ pressed }) => [
+              styles.choice,
+              {
+                borderColor: taskType === 'combo' ? tint : border,
+              },
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              Combo
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.field}>
+          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+            Max points
+          </Text>
+          <TextInput
+            value={maxPoints}
+            onChangeText={setMaxPoints}
+            placeholder="10"
+            placeholderTextColor={border}
+            keyboardType="number-pad"
+            editable={!isCreating}
+            style={[styles.input, { borderColor: border, color: colors.text }]}
+          />
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={[textStyles.subtitle, { color: textColor }]}>
+            Rubric (criteria)
+          </Text>
+          {!createdTask ? (
             <Text
               style={[textStyles.default, styles.hint, { color: textColor }]}
             >
-              Created task ID:{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {createdTask.id}
-              </Text>
+              Create the task first to run OCR and save rubric.
             </Text>
           ) : null}
+        </View>
 
-          {createdTask ? (
-            <>
-              <View style={styles.sectionHeader}>
-                <Text style={[textStyles.subtitle, { color: textColor }]}>
-                  Photo references
-                </Text>
-              </View>
+        <View style={styles.row}>
+          <Pressable
+            onPress={onPickRubricImage}
+            disabled={isOcring}
+            style={({ pressed }) => [
+              styles.button,
+              { borderColor: tint },
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+              Pick rubric image
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={onRunRubricOcr}
+            disabled={!createdTask || !rubricOcrAsset || isOcring}
+            style={({ pressed }) => [
+              styles.button,
+              {
+                borderColor:
+                  createdTask && rubricOcrAsset && !isOcring ? tint : border,
+              },
+              pressed && createdTask && rubricOcrAsset ? styles.pressed : null,
+            ]}
+          >
+            <Text
+              style={[
+                textStyles.defaultSemiBold,
+                {
+                  color:
+                    createdTask && rubricOcrAsset && !isOcring
+                      ? tint
+                      : textColor,
+                },
+              ]}
+            >
+              {isOcring ? 'Parsing…' : 'OCR rubric'}
+            </Text>
+          </Pressable>
+          {isOcring ? <ActivityIndicator color={tint} /> : null}
+        </View>
+        {rubricOcrAsset ? (
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Selected rubric image: {assetLabel(rubricOcrAsset)}
+          </Text>
+        ) : null}
 
-              <View style={styles.row}>
-                <Pressable
-                  onPress={onPickPhoto}
-                  disabled={isUploadingPhoto}
-                  style={({ pressed }) => [
-                    styles.button,
-                    { borderColor: tint },
-                    pressed ? styles.pressed : null,
-                  ]}
-                >
-                  <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                    Pick photo
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={onUploadPhoto}
-                  disabled={!photoAsset || isUploadingPhoto}
-                  style={({ pressed }) => [
-                    styles.button,
-                    { borderColor: photoAsset ? tint : border },
-                    pressed && photoAsset ? styles.pressed : null,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      textStyles.defaultSemiBold,
-                      { color: photoAsset ? tint : textColor },
-                    ]}
-                  >
-                    {isUploadingPhoto ? 'Uploading…' : 'Upload'}
-                  </Text>
-                </Pressable>
-                {isUploadingPhoto ? <ActivityIndicator color={tint} /> : null}
-              </View>
+        {criteria.map((c, idx) => (
+          <View key={idx} style={styles.criteriaRow}>
+            <TextInput
+              value={c}
+              onChangeText={(t) =>
+                setCriteria((prev) => prev.map((p, i) => (i === idx ? t : p)))
+              }
+              placeholder={`Criterion ${idx + 1}`}
+              placeholderTextColor={border}
+              editable={!isSavingCriteria}
+              style={[
+                styles.input,
+                { borderColor: border, color: colors.text, flex: 1 },
+              ]}
+            />
+            <Pressable
+              onPress={() =>
+                setCriteria((prev) => prev.filter((_, i) => i !== idx))
+              }
+              disabled={criteria.length <= 1 || isSavingCriteria}
+              style={({ pressed }) => [
+                styles.smallButton,
+                { borderColor: border },
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                −
+              </Text>
+            </Pressable>
+          </View>
+        ))}
 
-              {photoAsset ? (
-                <>
-                  <Text
-                    style={[
-                      textStyles.default,
-                      styles.hint,
-                      { color: textColor },
-                    ]}
-                  >
-                    Selected: {assetLabel(photoAsset)}
-                  </Text>
-                  <View style={styles.previewFrame}>
-                    <Image
-                      source={{ uri: photoAsset.uri }}
-                      style={styles.previewImage}
-                      contentFit="cover"
-                      accessibilityLabel="Selected photo preview"
-                    />
-                  </View>
-                </>
-              ) : null}
+        <View style={styles.row}>
+          <Pressable
+            onPress={() => setCriteria((prev) => [...prev, ''])}
+            disabled={isSavingCriteria}
+            style={({ pressed }) => [
+              styles.button,
+              { borderColor: tint },
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+              Add criterion
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={onSaveCriteria}
+            disabled={!createdTask || isSavingCriteria}
+            style={({ pressed }) => [
+              styles.button,
+              { borderColor: createdTask ? tint : border },
+              pressed && createdTask ? styles.pressed : null,
+            ]}
+          >
+            <Text
+              style={[
+                textStyles.defaultSemiBold,
+                { color: createdTask ? tint : textColor },
+              ]}
+            >
+              {isSavingCriteria ? 'Saving…' : 'Save rubric'}
+            </Text>
+          </Pressable>
+        </View>
 
+        <Pressable
+          onPress={onCreateTask}
+          disabled={!canCreate}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            { backgroundColor: canCreate ? tint : border },
+            pressed && canCreate ? styles.pressed : null,
+          ]}
+        >
+          <Text style={[textStyles.defaultSemiBold, styles.primaryText]}>
+            {isCreating ? (createStep ?? 'Working…') : 'Create task'}
+          </Text>
+        </Pressable>
+
+        {createdTask ? (
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Created task ID:{' '}
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              {createdTask.id}
+            </Text>
+          </Text>
+        ) : null}
+
+        {createdTask ? (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={[textStyles.subtitle, { color: textColor }]}>
+                Photo references
+              </Text>
+            </View>
+
+            <View style={styles.row}>
               <Pressable
-                onPress={loadPhotos}
+                onPress={onPickPhoto}
                 disabled={isUploadingPhoto}
                 style={({ pressed }) => [
                   styles.button,
-                  { borderColor: border },
+                  { borderColor: tint },
                   pressed ? styles.pressed : null,
                 ]}
               >
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  Refresh photo list
+                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                  Pick photo
                 </Text>
               </Pressable>
+              <Pressable
+                onPress={onUploadPhoto}
+                disabled={!photoAsset || isUploadingPhoto}
+                style={({ pressed }) => [
+                  styles.button,
+                  { borderColor: photoAsset ? tint : border },
+                  pressed && photoAsset ? styles.pressed : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    textStyles.defaultSemiBold,
+                    { color: photoAsset ? tint : textColor },
+                  ]}
+                >
+                  {isUploadingPhoto ? 'Uploading…' : 'Upload'}
+                </Text>
+              </Pressable>
+              {isUploadingPhoto ? <ActivityIndicator color={tint} /> : null}
+            </View>
 
-              {photos.length ? (
-                <View style={styles.photoGrid}>
-                  {photos.slice(0, 6).map((p) => (
-                    <View key={p.id} style={styles.photoThumb}>
-                      {p.signed_url ? (
-                        <Image
-                          source={{ uri: p.signed_url }}
-                          style={styles.thumbImage}
-                          contentFit="cover"
-                          accessibilityLabel="Task reference photo"
-                        />
-                      ) : (
-                        <View
-                          style={[
-                            styles.thumbPlaceholder,
-                            { borderColor: border },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              textStyles.default,
-                              { color: textColor, opacity: 0.8 },
-                            ]}
-                          >
-                            (no URL)
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              ) : (
+            {photoAsset ? (
+              <>
                 <Text
                   style={[
                     textStyles.default,
@@ -868,22 +784,81 @@ export default function OrganizerCreateTaskScreen() {
                     { color: textColor },
                   ]}
                 >
-                  No reference photos uploaded yet.
+                  Selected: {assetLabel(photoAsset)}
                 </Text>
-              )}
-            </>
-          ) : null}
+                <View style={styles.previewFrame}>
+                  <Image
+                    source={{ uri: photoAsset.uri }}
+                    style={styles.previewImage}
+                    contentFit="cover"
+                    accessibilityLabel="Selected photo preview"
+                  />
+                </View>
+              </>
+            ) : null}
 
-          {error ? (
-            <Text
-              style={[textStyles.default, styles.errorText, { color: tint }]}
+            <Pressable
+              onPress={loadPhotos}
+              disabled={isUploadingPhoto}
+              style={({ pressed }) => [
+                styles.button,
+                { borderColor: border },
+                pressed ? styles.pressed : null,
+              ]}
             >
-              {error}
-            </Text>
-          ) : null}
-        </ScrollView>
-      </SafeScreen>
-    </>
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                Refresh photo list
+              </Text>
+            </Pressable>
+
+            {photos.length ? (
+              <View style={styles.photoGrid}>
+                {photos.slice(0, 6).map((p) => (
+                  <View key={p.id} style={styles.photoThumb}>
+                    {p.signed_url ? (
+                      <Image
+                        source={{ uri: p.signed_url }}
+                        style={styles.thumbImage}
+                        contentFit="cover"
+                        accessibilityLabel="Task reference photo"
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.thumbPlaceholder,
+                          { borderColor: border },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            textStyles.default,
+                            { color: textColor, opacity: 0.8 },
+                          ]}
+                        >
+                          (no URL)
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text
+                style={[textStyles.default, styles.hint, { color: textColor }]}
+              >
+                No reference photos uploaded yet.
+              </Text>
+            )}
+          </>
+        ) : null}
+
+        {error ? (
+          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
+            {error}
+          </Text>
+        ) : null}
+      </ScrollView>
+    </SafeScreen>
   );
 }
 

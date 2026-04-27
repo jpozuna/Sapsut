@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { ScreenState } from '@/components/screen-state';
 import { SafeScreen } from '@/components/safe-screen';
@@ -149,79 +149,73 @@ export default function SubmissionConfirmationScreen() {
   }, [isAutoApproved, isError, isUnderReview, status]);
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: 'Confirmation',
-          headerBackTitle: 'Tasks',
-          headerLeft: () => (
-            <Pressable onPress={onBackToTasks} style={styles.headerBack}>
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Back
-              </Text>
-            </Pressable>
-          ),
-        }}
-      />
-      <ScreenState
-        isLoading={isLoading}
-        error={error}
-        onRetry={onRetry}
-        loadingLabel="Checking submission status…"
-      >
-        <SafeScreen backgroundColor={backgroundColor}>
-          <View style={styles.content}>
-            <Text style={[textStyles.title, { color: textColor }]}>
-              {title}
-            </Text>
+    <ScreenState
+      isLoading={isLoading}
+      error={error}
+      onRetry={onRetry}
+      loadingLabel="Checking submission status…"
+    >
+      <SafeScreen backgroundColor={backgroundColor}>
+        <Pressable onPress={onBackToTasks} style={styles.inlineBack}>
+          <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+            Back to tasks
+          </Text>
+        </Pressable>
+        <View style={styles.content}>
+          <Text style={[textStyles.title, { color: textColor }]}>{title}</Text>
 
+          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
+            Submission ID:{' '}
+            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+              {submissionId}
+            </Text>
+          </Text>
+
+          {status === 'pending' ? (
             <Text
               style={[textStyles.default, styles.hint, { color: textColor }]}
             >
-              Submission ID:{' '}
+              Status:{' '}
               <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {submissionId}
+                processing…
               </Text>
             </Text>
+          ) : null}
 
-            {status === 'pending' ? (
+          {isUnderReview ? (
+            <Text
+              style={[textStyles.default, styles.hint, { color: textColor }]}
+            >
+              Your submission was flagged and is{' '}
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                under review
+              </Text>
+              .
+            </Text>
+          ) : null}
+
+          {isError ? (
+            <Text style={[textStyles.default, styles.hint, { color: tint }]}>
+              We hit an error processing your submission
+              {submission?.rationale?.trim()
+                ? `: ${submission.rationale.trim()}`
+                : '.'}
+            </Text>
+          ) : null}
+
+          {isAutoApproved && submission?.score != null ? (
+            <View style={styles.resultBox}>
               <Text
                 style={[textStyles.default, styles.hint, { color: textColor }]}
               >
-                Status:{' '}
+                Score:{' '}
                 <Text
                   style={[textStyles.defaultSemiBold, { color: textColor }]}
                 >
-                  processing…
+                  {String(submission.score)}
                 </Text>
               </Text>
-            ) : null}
-
-            {isUnderReview ? (
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                Your submission was flagged and is{' '}
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  under review
-                </Text>
-                .
-              </Text>
-            ) : null}
-
-            {isError ? (
-              <Text style={[textStyles.default, styles.hint, { color: tint }]}>
-                We hit an error processing your submission
-                {submission?.rationale?.trim()
-                  ? `: ${submission.rationale.trim()}`
-                  : '.'}
-              </Text>
-            ) : null}
-
-            {isAutoApproved && submission?.score != null ? (
-              <View style={styles.resultBox}>
+              {submission?.rationale?.trim() ? (
                 <Text
                   style={[
                     textStyles.default,
@@ -229,95 +223,78 @@ export default function SubmissionConfirmationScreen() {
                     { color: textColor },
                   ]}
                 >
-                  Score:{' '}
+                  Rationale:{' '}
                   <Text
                     style={[textStyles.defaultSemiBold, { color: textColor }]}
                   >
-                    {String(submission.score)}
+                    {submission.rationale.trim()}
                   </Text>
                 </Text>
-                {submission?.rationale?.trim() ? (
-                  <Text
-                    style={[
-                      textStyles.default,
-                      styles.hint,
-                      { color: textColor },
-                    ]}
-                  >
-                    Rationale:{' '}
-                    <Text
-                      style={[textStyles.defaultSemiBold, { color: textColor }]}
-                    >
-                      {submission.rationale.trim()}
-                    </Text>
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
+              ) : null}
+            </View>
+          ) : null}
 
-            {isTerminal ? (
-              <Pressable
-                onPress={onBackToTasks}
-                style={({ pressed }) => [
-                  styles.button,
-                  { borderColor: tint, backgroundColor: 'transparent' },
-                  pressed ? styles.buttonPressed : null,
-                ]}
-              >
-                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                  Back to tasks
-                </Text>
-              </Pressable>
-            ) : (
-              <Text
-                style={[
-                  textStyles.default,
-                  styles.hint,
-                  { color: textColor, opacity: 0.7 },
-                ]}
-              >
-                We’ll update this screen automatically.
-              </Text>
-            )}
-
-            {!submissionId ? (
-              <Text style={[textStyles.default, styles.hint, { color: tint }]}>
-                Missing submission id.
-              </Text>
-            ) : null}
-
-            <View
-              style={[
-                styles.statusPill,
-                { borderColor: border, backgroundColor: 'transparent' },
+          {isTerminal ? (
+            <Pressable
+              onPress={onBackToTasks}
+              style={({ pressed }) => [
+                styles.button,
+                { borderColor: tint, backgroundColor: 'transparent' },
+                pressed ? styles.buttonPressed : null,
               ]}
             >
-              <Text
-                style={[
-                  textStyles.default,
-                  styles.pillText,
-                  { color: textColor },
-                ]}
-              >
-                Status:{' '}
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  {status}
-                </Text>
+              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
+                Back to tasks
               </Text>
-            </View>
+            </Pressable>
+          ) : (
+            <Text
+              style={[
+                textStyles.default,
+                styles.hint,
+                { color: textColor, opacity: 0.7 },
+              ]}
+            >
+              We’ll update this screen automatically.
+            </Text>
+          )}
+
+          {!submissionId ? (
+            <Text style={[textStyles.default, styles.hint, { color: tint }]}>
+              Missing submission id.
+            </Text>
+          ) : null}
+
+          <View
+            style={[
+              styles.statusPill,
+              { borderColor: border, backgroundColor: 'transparent' },
+            ]}
+          >
+            <Text
+              style={[
+                textStyles.default,
+                styles.pillText,
+                { color: textColor },
+              ]}
+            >
+              Status:{' '}
+              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
+                {status}
+              </Text>
+            </Text>
           </View>
-        </SafeScreen>
-      </ScreenState>
-    </>
+        </View>
+      </SafeScreen>
+    </ScreenState>
   );
 }
 
 const styles = StyleSheet.create({
-  headerBack: {
-    paddingHorizontal: 6,
+  inlineBack: {
+    alignSelf: 'flex-start',
     paddingVertical: 6,
+    paddingHorizontal: 6,
   },
   content: {
     gap: 10,
