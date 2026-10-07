@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { EmptyState } from '@/components/empty-state';
 import { SafeScreen } from '@/components/safe-screen';
 import { ScreenState } from '@/components/screen-state';
 import {
@@ -18,7 +19,14 @@ import type { AppChipTone } from '@/components/ui';
 import type { IconSymbolName } from '@/components/ui/icon-symbol';
 import { Radius, Spacing } from '@/constants/theme';
 import { apiUrl } from '@/lib/api';
+import { isAppError } from '@/lib/app-error';
 import { httpJson } from '@/lib/http';
+import {
+  isNoTeamSessionError,
+  teamHeaders,
+  useTeamSession,
+  withTeamToken,
+} from '@/lib/team-session';
 import { useAppTheme } from '@/lib/ui';
 
 type Submission = {
@@ -34,6 +42,24 @@ type Submission = {
   /** Short-lived signed URL minted by the backend for the stored photo. */
   photo_signed_url?: string | null;
 };
+
+/**
+ * How a failed load should look. The server also answers 404 for another
+ * team's submission, so 404 is "not found" for everyone. No session, or a 401
+ * (which also clears the session), means the player must join a team. Keyed on
+ * status and kind, never on server text.
+ */
+type AccessState = 'join' | 'not-found' | null;
+
+function accessStateOf(err: unknown): AccessState {
+  if (!err) return null;
+  if (isNoTeamSessionError(err)) return 'join';
+  if (isAppError(err)) {
+    if (err.status === 401) return 'join';
+    if (err.status === 404) return 'not-found';
+  }
+  return null;
+}
 
 function normalizeStatus(raw: unknown): string {
   const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
@@ -77,6 +103,8 @@ export default function SubmissionConfirmationScreen() {
   const submissionId = String(id ?? '').trim();
 
   const { colors } = useAppTheme();
+  const { session } = useTeamSession();
+  const sessionToken = session?.token ?? null;
 
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,6 +114,11 @@ export default function SubmissionConfirmationScreen() {
   const pollCount = useRef(0);
   const MAX_POLLS = 20; // ~30s at 1.5s intervals
   const mountedRef = useRef(true);
+  const latestRequestId = useRef(0);
+  // Token the shown submission was fetched with, and the last token a rejoin
+  // refetch ran for.
+  const shownTokenRef = useRef<string | null>(null);
+  const refetchedForToken = useRef<string | null>(null);
 
   const status = useMemo(
     () => normalizeStatus(submission?.status),
@@ -100,27 +133,45 @@ export default function SubmissionConfirmationScreen() {
     [status],
   );
 
+  // Same request as `teamJson` (X-Team-Token, 401 clears the session), but also
+  // reports which token was used, so a later rejoin as another team is noticed.
   const fetchOnce = useCallback(async () => {
     if (!submissionId) throw new Error('Missing submission id.');
-    const data = await httpJson<Submission>(
-      apiUrl(`/submissions/${submissionId}`),
-    );
-    return data;
+    const path = `/submissions/${encodeURIComponent(submissionId)}`;
+    return await withTeamToken(async (token) => ({
+      data: await httpJson<Submission>(apiUrl(path), {
+        headers: teamHeaders(token),
+      }),
+      token,
+    }));
   }, [submissionId]);
 
-  const onRetry = useCallback(async () => {
+  // Every fetch (first load, retry, poll) takes a new id. Only the latest one
+  // may set state, so a slow older response cannot overwrite a newer one.
+  const load = useCallback(async () => {
+    const requestId = ++latestRequestId.current;
     setIsLoading(true);
     setError(undefined);
     pollCount.current = 0;
     try {
-      const data = await fetchOnce();
-      if (mountedRef.current) setSubmission(data);
+      const { data, token } = await fetchOnce();
+      if (!mountedRef.current || requestId !== latestRequestId.current) return;
+      shownTokenRef.current = token;
+      setSubmission(data);
     } catch (e) {
-      if (mountedRef.current) setError(e);
+      if (!mountedRef.current || requestId !== latestRequestId.current) return;
+      shownTokenRef.current = null;
+      setError(e);
     } finally {
-      if (mountedRef.current) setIsLoading(false);
+      if (mountedRef.current && requestId === latestRequestId.current) {
+        setIsLoading(false);
+      }
     }
   }, [fetchOnce]);
+
+  const onRetry = load;
+
+  const accessState = accessStateOf(error);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -131,26 +182,29 @@ export default function SubmissionConfirmationScreen() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    void load();
+  }, [load]);
 
-    (async () => {
-      setIsLoading(true);
-      setError(undefined);
-      pollCount.current = 0;
-      try {
-        const data = await fetchOnce();
-        if (!cancelled && mountedRef.current) setSubmission(data);
-      } catch (e) {
-        if (!cancelled && mountedRef.current) setError(e);
-      } finally {
-        if (!cancelled && mountedRef.current) setIsLoading(false);
-      }
-    })();
+  // Polling already stops on any error. Once the player has joined a team from
+  // the join state, load the submission again.
+  useEffect(() => {
+    if (accessState === 'join' && sessionToken) void load();
+  }, [accessState, load, sessionToken]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchOnce]);
+  // Rejoined as another team while a submission is shown: drop it and fetch
+  // again with the new token (which may now be "not found"). Only runs when the
+  // token differs from the one the shown data was fetched with, and at most
+  // once per token, so it cannot loop.
+  useEffect(() => {
+    if (isLoading || !sessionToken) return;
+    const shownToken = shownTokenRef.current;
+    if (!shownToken || shownToken === sessionToken) return;
+    if (refetchedForToken.current === sessionToken) return;
+    refetchedForToken.current = sessionToken;
+    shownTokenRef.current = null;
+    setSubmission(null);
+    void load();
+  }, [isLoading, load, sessionToken]);
 
   useEffect(() => {
     if (!submissionId) return;
@@ -159,11 +213,20 @@ export default function SubmissionConfirmationScreen() {
     if (isTerminal) return;
 
     const poll = async () => {
+      const requestId = ++latestRequestId.current;
       try {
-        const data = await fetchOnce();
-        if (mountedRef.current) setSubmission(data);
+        const { data, token } = await fetchOnce();
+        if (!mountedRef.current || requestId !== latestRequestId.current) {
+          return;
+        }
+        shownTokenRef.current = token;
+        setSubmission(data);
       } catch (e) {
-        if (mountedRef.current) setError(e);
+        if (!mountedRef.current || requestId !== latestRequestId.current) {
+          return;
+        }
+        shownTokenRef.current = null;
+        setError(e);
       }
     };
 
@@ -180,7 +243,7 @@ export default function SubmissionConfirmationScreen() {
     return () => {
       if (pollingTimer.current) clearTimeout(pollingTimer.current);
     };
-  }, [error, fetchOnce, isLoading, isTerminal, submissionId]);
+  }, [error, fetchOnce, isLoading, isTerminal, submission, submissionId]);
 
   const onBackToTasks = useCallback(() => {
     // Avoid routing to the group root (which can surface as a weird back label).
@@ -213,6 +276,30 @@ export default function SubmissionConfirmationScreen() {
   const rationale = submission?.rationale?.trim() ?? '';
   const textAnswer = submission?.text_answer?.trim() ?? '';
   const photoUrl = submission?.photo_signed_url?.trim() ?? '';
+
+  if (!isLoading && accessState) {
+    const needsJoin = accessState === 'join';
+    return (
+      <SafeScreen>
+        <NavBar title="Submission" onBack={onBackToTasks} />
+        <EmptyState
+          icon={needsJoin ? 'person.2.fill' : 'magnifyingglass'}
+          title={
+            needsJoin
+              ? 'Join your team to see this submission'
+              : 'Submission not found'
+          }
+          message={
+            needsJoin
+              ? 'Enter the invite code from an organizer to view your team’s submissions.'
+              : 'It may have been removed, or it may belong to another team.'
+          }
+          actionLabel={needsJoin ? 'Join team' : 'Back to tasks'}
+          onAction={needsJoin ? () => router.push('/team') : onBackToTasks}
+        />
+      </SafeScreen>
+    );
+  }
 
   return (
     <ScreenState

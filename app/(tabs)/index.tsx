@@ -6,7 +6,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { EmptyState } from '@/components/empty-state';
@@ -15,6 +15,7 @@ import { ScreenState } from '@/components/screen-state';
 import { SapsutLogo } from '@/components/sapsut-logo';
 import { TaskSortBar } from '@/components/task-sort-bar';
 import {
+  AppButton,
   AppCard,
   AppChip,
   AppText,
@@ -33,7 +34,7 @@ import {
   TASK_SORT_OPTIONS,
   type TaskSort,
 } from '@/lib/task-sort';
-import { getSavedTeamId } from '@/lib/team-session';
+import { teamJson, useTeamSession } from '@/lib/team-session';
 import { useAppTheme } from '@/lib/ui';
 
 type Task = {
@@ -90,18 +91,27 @@ function typeMeta(type: Task['type']): { label: string; icon: IconSymbolName } {
 
 export default function TaskListScreen() {
   const { colors } = useAppTheme();
-  const { role } = useRole();
+  const { role, isHydrating } = useRole();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(undefined);
-  const [teamId, setTeamId] = useState<string | null>(null);
+  const { session, isLoading: isSessionLoading } = useTeamSession();
+  // Changes on join, leave, rejoin and server-side sign-out (401).
+  const sessionToken = session?.token ?? null;
   const [taskSubmissionByTaskId, setTaskSubmissionByTaskId] = useState<
     Record<string, { id: string; status: string }>
   >({});
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const listRef = useRef<FlatList<Task>>(null);
+  const mountedRef = useRef(true);
+  const submissionsRequestId = useRef(0);
+  const submissionsInFlight = useRef<{
+    id: number;
+    token: string;
+    promise: Promise<void>;
+  } | null>(null);
 
   const fetchTasks = useCallback(async () => {
     setError(undefined);
@@ -126,34 +136,33 @@ export default function TaskListScreen() {
   }, [fetchTasks]);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const saved = await getSavedTeamId(
-        role === 'organizer' ? 'organizer' : 'participant',
-      );
-      if (!mounted) return;
-      setTeamId(saved);
-    })();
+    mountedRef.current = true;
     return () => {
-      mounted = false;
+      mountedRef.current = false;
     };
-  }, [role]);
+  }, []);
 
-  useEffect(() => {
-    if (role === 'organizer') {
+  // `role` reads 'participant' while the organizer session is still being
+  // restored, so hydrating counts as not-participant: no team call, no card.
+  const isTeamParticipant = !isHydrating && role !== 'organizer';
+
+  // Loads the team's submission statuses. A call for the same token joins the
+  // one already in flight; a newer call (other token, or no longer a team
+  // participant) supersedes it, and the older response is dropped.
+  const loadSubmissions = useCallback((): Promise<void> => {
+    if (!isTeamParticipant || !sessionToken) {
+      submissionsRequestId.current += 1;
+      submissionsInFlight.current = null;
       setTaskSubmissionByTaskId({});
-      return;
+      return Promise.resolve();
     }
-    if (!teamId?.trim()) {
-      setTaskSubmissionByTaskId({});
-      return;
-    }
-    let mounted = true;
-    (async () => {
+    const inFlight = submissionsInFlight.current;
+    if (inFlight && inFlight.token === sessionToken) return inFlight.promise;
+
+    const requestId = ++submissionsRequestId.current;
+    const promise = (async () => {
       try {
-        const list = await httpJson<SubmissionListItem[]>(
-          apiUrl(`/submissions/?team_id=${encodeURIComponent(teamId.trim())}`),
-        );
+        const list = await teamJson<SubmissionListItem[]>('/submissions/');
         const next: Record<string, { id: string; status: string }> = {};
         for (const s of Array.isArray(list) ? list : []) {
           const tid = typeof s?.task_id === 'string' ? s.task_id.trim() : '';
@@ -162,15 +171,38 @@ export default function TaskListScreen() {
           if (next[tid]) continue;
           next[tid] = { id: String(s.id), status: normalizeStatus(s.status) };
         }
-        if (mounted) setTaskSubmissionByTaskId(next);
+        if (mountedRef.current && requestId === submissionsRequestId.current) {
+          setTaskSubmissionByTaskId(next);
+        }
       } catch {
-        if (mounted) setTaskSubmissionByTaskId({});
+        // Keep what is shown on a transient failure. A 401 clears the session,
+        // which changes the token and resets the statuses.
+      } finally {
+        if (submissionsInFlight.current?.id === requestId) {
+          submissionsInFlight.current = null;
+        }
       }
     })();
-    return () => {
-      mounted = false;
+    submissionsInFlight.current = {
+      id: requestId,
+      token: sessionToken,
+      promise,
     };
-  }, [role, teamId]);
+    return promise;
+  }, [isTeamParticipant, sessionToken]);
+
+  // Another team (or none) must never see the previous team's statuses.
+  useEffect(() => {
+    setTaskSubmissionByTaskId({});
+  }, [isTeamParticipant, sessionToken]);
+
+  // Runs on focus (so a just-submitted task shows its status) and again when
+  // the role or session changes while focused.
+  useFocusEffect(
+    useCallback(() => {
+      void loadSubmissions();
+    }, [loadSubmissions]),
+  );
 
   const onRetry = useCallback(async () => {
     setIsLoading(true);
@@ -186,13 +218,13 @@ export default function TaskListScreen() {
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await fetchTasks();
+      await Promise.all([fetchTasks(), loadSubmissions()]);
     } catch (e) {
       setError(e);
     } finally {
       setIsRefreshing(false);
     }
-  }, [fetchTasks]);
+  }, [fetchTasks, loadSubmissions]);
 
   const activeTasks = useMemo(() => {
     const nowMs = Date.now();
@@ -239,6 +271,7 @@ export default function TaskListScreen() {
   const total = activeTasks.length;
   const progress = total > 0 ? completedCount / total : 0;
   const isParticipant = role !== 'organizer';
+  const needsTeam = isTeamParticipant && !isSessionLoading && !sessionToken;
 
   const subtitle =
     total === 0
@@ -431,6 +464,28 @@ export default function TaskListScreen() {
               </Animated.View>
             );
           }}
+          ListHeaderComponent={
+            needsTeam ? (
+              <AppCard variant="outlined" style={styles.joinCard}>
+                <View style={styles.joinCopy}>
+                  <AppText variant="title">Join your team</AppText>
+                  <AppText variant="callout" tone="secondary">
+                    Enter the invite code from an organizer to submit tasks and
+                    see your team&apos;s progress.
+                  </AppText>
+                </View>
+                <AppButton
+                  tone="primary"
+                  size="md"
+                  fullWidth
+                  onPress={() => router.push('/team')}
+                  accessibilityLabel="Join your team with an invite code"
+                >
+                  Join team
+                </AppButton>
+              </AppCard>
+            ) : null
+          }
           ListEmptyComponent={
             <EmptyState
               icon="flag.fill"
@@ -468,6 +523,13 @@ const styles = StyleSheet.create({
   listContent: {
     gap: Spacing.md,
     paddingBottom: TAB_BAR_CLEARANCE,
+  },
+  joinCard: {
+    gap: Spacing.base,
+    marginBottom: Spacing.md,
+  },
+  joinCopy: {
+    gap: Spacing.xs,
   },
   listContentEmpty: {
     flexGrow: 1,

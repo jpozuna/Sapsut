@@ -1,15 +1,15 @@
 # Board: Team isolation (issue #55)
 
-| ID   | Title                                        | Status      | Mode   | Depends on      | Parallel group |
-| ---- | -------------------------------------------- | ----------- | ------ | --------------- | -------------- |
-| T-10 | Signed team session token on the backend     | done        | inline | none            | 1              |
-| T-13 | Team session and Join team screen in app     | done        | inline | none (contract) | 1              |
-| T-11 | Organizer-created teams and invite join      | done        | inline | T-10            | 2              |
-| T-12 | Team-scoped submissions, no client paths     | done        | inline | T-10            | 2              |
-| T-14 | Submit and Settings use the team session     | done        | inline | T-12, T-13      | 3              |
-| T-15 | Task list and detail use the team session    | in-progress | inline | T-12, T-13      | 3              |
-| T-16 | Organizer Teams screen                       | done        | inline | T-11            | 3              |
-| M-02 | Remove deprecated team-session exports (mgr) | todo        | inline | T-14, T-15      | after 3        |
+| ID   | Title                                        | Status | Mode   | Depends on      | Parallel group |
+| ---- | -------------------------------------------- | ------ | ------ | --------------- | -------------- |
+| T-10 | Signed team session token on the backend     | done   | inline | none            | 1              |
+| T-13 | Team session and Join team screen in app     | done   | inline | none (contract) | 1              |
+| T-11 | Organizer-created teams and invite join      | done   | inline | T-10            | 2              |
+| T-12 | Team-scoped submissions, no client paths     | done   | inline | T-10            | 2              |
+| T-14 | Submit and Settings use the team session     | done   | inline | T-12, T-13      | 3              |
+| T-15 | Task list and detail use the team session    | done   | inline | T-12, T-13      | 3              |
+| T-16 | Organizer Teams screen                       | done   | inline | T-11            | 3              |
+| M-02 | Remove deprecated team-session exports (mgr) | todo   | inline | T-14, T-15      | after 3        |
 
 Concurrency cap: 3
 
@@ -43,6 +43,11 @@ Backend and app must ship together; old app builds stop being able to submit.
 
 Decisions log:
 
+- 2026-10-07: T-15 accepted after one review round. The Tasks tab makes no
+  team call and shows no join card while the role is hydrating, and reloads
+  statuses on focus. The detail screen uses `withTeamToken` + `httpJson`
+  (same behavior as `teamJson`) so it knows which token the shown data used,
+  and refetches once after a rejoin as another team.
 - 2026-10-07: T-14 accepted after one review round. Submit errors sit in the
   footer (alert role, announced), the POST has a 45s timeout, and a duplicate
   submission links to the existing one. `AppCard` has no `accessibilityHint`,
