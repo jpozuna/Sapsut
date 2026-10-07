@@ -7,6 +7,23 @@ import { Radius, Spacing, Typography } from '@/constants/theme';
 import { useAppTheme } from '@/lib/ui';
 import { AppText } from './app-text';
 
+type TabOptions = BottomTabBarProps['descriptors'][string]['options'];
+
+/**
+ * Expo Router rewrites `href: null` before options reach the tab bar: it
+ * destructures `href` away and instead sets a hidden item style plus a
+ * `tabBarButton` that renders nothing. A custom tab bar bypasses that button,
+ * so both the raw and the rewritten form have to be checked here — otherwise
+ * role-gated tabs stay visible.
+ */
+function isTabHidden(options: TabOptions): boolean {
+  if ((options as { href?: string | null }).href === null) return true;
+  const itemStyle = StyleSheet.flatten(options.tabBarItemStyle) as
+    | { display?: string }
+    | undefined;
+  return itemStyle?.display === 'none';
+}
+
 /** Floating pill tab bar — replaces the stock platform bar. */
 export function FloatingTabBar({
   state,
@@ -34,10 +51,7 @@ export function FloatingTabBar({
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
 
-          // `href` is an Expo Router extension to the base tab options. Routes
-          // hidden with `href: null` can still appear in state, so skip them.
-          const { href } = options as { href?: string | null };
-          if (href === null) return null;
+          if (isTabHidden(options)) return null;
 
           const isFocused = state.index === index;
           const label =
