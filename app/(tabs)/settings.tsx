@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -16,44 +16,72 @@ import {
 } from '@/components/ui';
 import type { IconSymbolName } from '@/components/ui/icon-symbol';
 import { Radius, Spacing } from '@/constants/theme';
+import { toAppError } from '@/lib/app-error';
 import { useRole } from '@/lib/role-context';
 import { useAppTheme } from '@/lib/ui';
 
 export default function SettingsScreen() {
   const { colors } = useAppTheme();
 
-  const { role, enterOrganizerMode, exitOrganizerMode } = useRole();
+  const { role, isHydrating, enterOrganizerMode, exitOrganizerMode } =
+    useRole();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [codeDraft, setCodeDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const modeLabel = useMemo(() => {
     return role === 'organizer' ? 'Organizer' : 'Participant';
   }, [role]);
 
   const openOrganizerPrompt = useCallback(() => {
+    // The stored session is still being verified; signing in now would race it.
+    if (isHydrating) return;
     setError(null);
     setCodeDraft('');
     setIsModalOpen(true);
-  }, []);
+  }, [isHydrating]);
 
-  const onConfirmOrganizer = useCallback(() => {
+  const onConfirmOrganizer = useCallback(async () => {
+    if (isSubmitting) return;
     const code = codeDraft.trim();
     if (!code) {
       setError('Enter an organizer code.');
       return;
     }
-    setIsModalOpen(false);
     setError(null);
-    enterOrganizerMode(code);
+    setIsSubmitting(true);
+    try {
+      await enterOrganizerMode(code);
+    } catch (e) {
+      if (!mountedRef.current) return;
+      setError(toAppError(e).message ?? 'Organizer sign-in failed. Try again.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (!mountedRef.current) return;
+    // The code is only needed for the exchange; do not keep it in state.
+    setCodeDraft('');
+    setIsSubmitting(false);
+    setIsModalOpen(false);
     router.push('/(tabs)/organizer');
-  }, [codeDraft, enterOrganizerMode]);
+  }, [codeDraft, enterOrganizerMode, isSubmitting]);
 
   const onCancelOrganizer = useCallback(() => {
+    if (isSubmitting) return;
     setIsModalOpen(false);
+    setCodeDraft('');
     setError(null);
-  }, []);
+  }, [isSubmitting]);
 
   const onSwitchToParticipant = useCallback(() => {
     exitOrganizerMode();
@@ -156,6 +184,7 @@ export default function SettingsScreen() {
                     tone="primary"
                     size="sm"
                     onPress={openOrganizerPrompt}
+                    disabled={isHydrating}
                     icon={
                       <IconSymbol
                         name="lock.fill"
@@ -198,7 +227,8 @@ export default function SettingsScreen() {
                 <View style={styles.rowBody}>
                   <AppText variant="title">Enter organizer code</AppText>
                   <AppText variant="caption" tone="secondary">
-                    Saved on this device until you switch back to participant.
+                    Stays signed in on this device for up to 24 hours, or until
+                    you switch back to participant.
                   </AppText>
                 </View>
               </View>
@@ -219,13 +249,19 @@ export default function SettingsScreen() {
               />
 
               <View style={styles.modalActions}>
-                <AppButton tone="ghost" size="sm" onPress={onCancelOrganizer}>
+                <AppButton
+                  tone="ghost"
+                  size="sm"
+                  onPress={onCancelOrganizer}
+                  disabled={isSubmitting}
+                >
                   Cancel
                 </AppButton>
                 <AppButton
                   tone="primary"
                   size="sm"
                   onPress={onConfirmOrganizer}
+                  loading={isSubmitting}
                 >
                   Continue
                 </AppButton>

@@ -1,18 +1,18 @@
 # Board: Security hardening (issue #53)
 
-| ID   | Title                                      | Status      | Mode   | Depends on | Parallel group |
-| ---- | ------------------------------------------ | ----------- | ------ | ---------- | -------------- |
-| M-00 | Install expo-secure-store (manager)        | done        | inline | none       | 1              |
-| T-01 | Enable RLS and lock down Storage           | done        | inline | none       | 1              |
-| T-02 | Harden organizer auth on the backend       | done        | inline | none       | 1              |
-| T-03 | Sanitize error responses and restrict CORS | done        | inline | none       | 1              |
-| T-04 | Secure, verified organizer session in app  | in-progress | inline | M-00, T-02 | 2              |
-| T-05 | Merge the two organizer route trees        | done        | inline | none       | 2              |
-| T-06 | Sanitize scoring errors; CORS parse fixes  | done        | inline | T-03       | 2              |
-| T-07 | Validate photo uploads before storing      | done        | inline | T-01, T-02 | 3              |
-| T-08 | Return only participant-safe submissions   | done        | inline | T-07       | 4              |
-| T-09 | Hide task rubric from `GET /tasks/`        | done        | inline | T-08       | 5              |
-| M-01 | Push T-01 migration to live DB (manager)   | todo        | inline | T-01       | after T-01     |
+| ID   | Title                                      | Status | Mode   | Depends on | Parallel group |
+| ---- | ------------------------------------------ | ------ | ------ | ---------- | -------------- |
+| M-00 | Install expo-secure-store (manager)        | done   | inline | none       | 1              |
+| T-01 | Enable RLS and lock down Storage           | done   | inline | none       | 1              |
+| T-02 | Harden organizer auth on the backend       | done   | inline | none       | 1              |
+| T-03 | Sanitize error responses and restrict CORS | done   | inline | none       | 1              |
+| T-04 | Secure, verified organizer session in app  | done   | inline | M-00, T-02 | 2              |
+| T-05 | Merge the two organizer route trees        | done   | inline | none       | 2              |
+| T-06 | Sanitize scoring errors; CORS parse fixes  | done   | inline | T-03       | 2              |
+| T-07 | Validate photo uploads before storing      | done   | inline | T-01, T-02 | 3              |
+| T-08 | Return only participant-safe submissions   | done   | inline | T-07       | 4              |
+| T-09 | Hide task rubric from `GET /tasks/`        | done   | inline | T-08       | 5              |
+| M-01 | Push T-01 migration to live DB (manager)   | todo   | inline | T-01       | after T-01     |
 
 Concurrency cap: 3
 
@@ -50,6 +50,15 @@ Follow-ups (to file as issues at close-out):
   status message), drop the dead confidence block, and decide how organizer
   override feedback reaches participants. Organizers should keep hints out of
   task `description` (public and sent to the model).
+- Organizer screens (`app/(tabs)/organizer/{create-task,review,history}.tsx`):
+  remove the leftover "Organizer code" field and `canLoad` gating, call
+  `organizerJson(path, init)` directly, then delete the deprecated code-argument
+  overloads, `setOrganizerCode` and the `'session'` marker shim.
+- `lib/api.ts`: reject a non-https API base URL in production builds (the
+  organizer code and token would otherwise travel in cleartext).
+- `lib/organizer-session.ts`: retry the first SecureStore read if it throws
+  (for example device locked at launch), and time-box SecureStore calls so the
+  write queue can't hang sign-in.
 - `services/scoring.py` `_mime_type_from_path` uses `mimetypes`, which on
   Python 3.9 labels `.heic`/`.heif` photos as JPEG for the vision model.
 - The one-submission-per-team-task check is not atomic and no unique
@@ -57,6 +66,12 @@ Follow-ups (to file as issues at close-out):
   pass. Needs a partial unique index excluding `status = 'error'`.
 
 Decisions log:
+
+- 2026-10-07: T-04 accepted after two rounds. The app stores only the session
+  token (SecureStore on native, `WHEN_UNLOCKED_THIS_DEVICE_ONLY`; memory only on
+  web), verifies it on launch with a 10s timeout, and any 401 or missing/expired
+  token drops to participant. The three organizer screens keep a compatibility
+  shim until their cleanup ticket.
 
 - 2026-10-07: T-08: participants see only allowlisted submission fields, a fixed
   rationale per status, and `score` only once final (`approved`,
