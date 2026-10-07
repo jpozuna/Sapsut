@@ -11,7 +11,7 @@
 | T-06 | Sanitize scoring errors; CORS parse fixes  | done        | inline | T-03       | 2              |
 | T-07 | Validate photo uploads before storing      | done        | inline | T-01, T-02 | 3              |
 | T-08 | Return only participant-safe submissions   | done        | inline | T-07       | 4              |
-| T-09 | Hide task rubric from `GET /tasks/`        | in-progress | inline | T-08       | 5              |
+| T-09 | Hide task rubric from `GET /tasks/`        | done        | inline | T-08       | 5              |
 | M-01 | Push T-01 migration to live DB (manager)   | todo        | inline | T-01       | after T-01     |
 
 Concurrency cap: 3
