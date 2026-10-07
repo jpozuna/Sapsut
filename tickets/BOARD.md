@@ -3,7 +3,7 @@
 | ID   | Title                                      | Status      | Mode   | Depends on | Parallel group |
 | ---- | ------------------------------------------ | ----------- | ------ | ---------- | -------------- |
 | M-00 | Install expo-secure-store (manager)        | done        | inline | none       | 1              |
-| T-01 | Enable RLS and lock down Storage           | in-progress | inline | none       | 1              |
+| T-01 | Enable RLS and lock down Storage           | done        | inline | none       | 1              |
 | T-02 | Harden organizer auth on the backend       | in-progress | inline | none       | 1              |
 | T-03 | Sanitize error responses and restrict CORS | done        | inline | none       | 1              |
 | T-04 | Secure, verified organizer session in app  | todo        | inline | M-00, T-02 | 2              |
@@ -33,6 +33,12 @@ Follow-ups (to file as issues at close-out):
 - Disable Auth signup in the hosted Supabase project settings (user action).
 
 Decisions log:
+
+- 2026-10-07: T-01 migration does not include the unscoped
+  `alter default privileges for role postgres revoke execute on functions from public`
+  (it would also hit future extension functions in other schemas). New functions
+  in `public` need an explicit revoke in their own migration. The migration has
+  not been executed anywhere yet; M-01 needs a dry run first.
 
 - 2026-10-07: T-08 added from T-06 review: participant submission endpoints
   return `ai_result`, which includes the exact-match answer and raw model output.
