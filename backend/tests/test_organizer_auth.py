@@ -716,3 +716,22 @@ def test_env_example_documents_the_organizer_code():
     idx = lines.index("ORGANIZER_DEMO_CODE=")
     assert idx > 0 and lines[idx - 1].startswith("#")
     assert "12+" in lines[idx - 1]
+
+
+def _padding_bit_variant(text: str) -> str:
+    """Same decoded bytes as ``text`` (a 43-char encoding of 32 bytes), different string."""
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    last = alphabet.index(text[-1])
+    return text[:-1] + alphabet[last ^ 1]
+
+
+def test_signature_with_altered_unused_bits_is_rejected(client):
+    token = _mint(client)["token"]
+    payload_b64, sig_b64 = token.split(".")
+    assert len(sig_b64) == 43
+    variant = f"{payload_b64}.{_padding_bit_variant(sig_b64)}"
+    assert base64.urlsafe_b64decode(sig_b64 + "=") == base64.urlsafe_b64decode(
+        _padding_bit_variant(sig_b64) + "="
+    )
+    resp = client.get("/organizer/session", headers=_bearer(variant))
+    assert resp.status_code == 401

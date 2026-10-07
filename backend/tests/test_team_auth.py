@@ -481,3 +481,14 @@ def test_token_stops_verifying_when_secret_becomes_too_short(monkeypatch):
 def test_canonical_team_id_is_public():
     assert team_auth.canonical_team_id(TEAM_ID.upper()) == TEAM_ID
     assert team_auth.canonical_team_id("nope") is None
+
+
+def test_signature_with_altered_unused_bits_is_rejected():
+    token, _ = issue_team_token(TEAM_ID)
+    payload_b64, sig_b64 = token.split(".")
+    assert len(sig_b64) == 43
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    variant_sig = sig_b64[:-1] + alphabet[alphabet.index(sig_b64[-1]) ^ 1]
+    assert base64.urlsafe_b64decode(sig_b64 + "=") == base64.urlsafe_b64decode(variant_sig + "=")
+    assert verify_team_token(f"{payload_b64}.{variant_sig}") is None
+    assert verify_team_token(token) is not None
