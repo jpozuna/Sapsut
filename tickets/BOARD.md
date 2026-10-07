@@ -3,9 +3,9 @@
 | ID   | Title                                        | Status      | Mode   | Depends on      | Parallel group |
 | ---- | -------------------------------------------- | ----------- | ------ | --------------- | -------------- |
 | T-10 | Signed team session token on the backend     | done        | inline | none            | 1              |
-| T-13 | Team session and Join team screen in app     | in-progress | inline | none (contract) | 1              |
-| T-11 | Organizer-created teams and invite join      | todo        | inline | T-10            | 2              |
-| T-12 | Team-scoped submissions, no client paths     | todo        | inline | T-10            | 2              |
+| T-13 | Team session and Join team screen in app     | done        | inline | none (contract) | 1              |
+| T-11 | Organizer-created teams and invite join      | in-progress | inline | T-10            | 2              |
+| T-12 | Team-scoped submissions, no client paths     | in-progress | inline | T-10            | 2              |
 | T-14 | Submit and Settings use the team session     | todo        | inline | T-12, T-13      | 3              |
 | T-15 | Task list and detail use the team session    | todo        | inline | T-12, T-13      | 3              |
 | T-16 | Organizer Teams screen                       | todo        | inline | T-11            | 3              |
@@ -43,6 +43,11 @@ Backend and app must ship together; old app builds stop being able to submit.
 
 Decisions log:
 
+- 2026-10-07: T-13 accepted after one review round (UI/UX: inline Leave
+  confirmation, full-width 44pt+ buttons, invite code upper-cased client-side,
+  wrong code vs connection error shown separately, a11y labels). The app always
+  sends upper-case invite codes. Follow-up to file at close: light-mode filled
+  buttons (white on `accent` `#E07B18`) are about 3:1 contrast app-wide.
 - 2026-10-07: T-10 accepted. From its security audit, `TEAM_SESSION_SECRET`
   must be 32+ characters and differ from `ORGANIZER_DEMO_CODE`, or team routes
   give 500 "not configured" (`/teams/join` hands out signed tokens, so a weak
