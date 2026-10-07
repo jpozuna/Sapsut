@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AccessibilityInfo,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,6 +12,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SafeScreen } from '@/components/safe-screen';
 import {
@@ -28,7 +30,13 @@ import { HitSlop, Radius, Spacing } from '@/constants/theme';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { useRole } from '@/lib/role-context';
-import { getSavedTeamId, saveTeamId } from '@/lib/team-session';
+import { isAppError, toAppError } from '@/lib/app-error';
+import {
+  isNoTeamSessionError,
+  teamHeaders,
+  useTeamSession,
+  withTeamToken,
+} from '@/lib/team-session';
 import { useAppTheme } from '@/lib/ui';
 
 type Task = {
@@ -42,6 +50,29 @@ type Task = {
 type CreateSubmissionOk = { submission_id: string; status: string };
 type CreateSubmissionError = { error: string; existing_submission_id?: string };
 type CreateSubmissionResponse = CreateSubmissionOk | CreateSubmissionError;
+
+const SESSION_EXPIRED_MESSAGE =
+  'Your team session expired. Join your team again.';
+const NETWORK_MESSAGE =
+  "Can't reach the server. Your answer and photo are kept. Check your connection and tap Try again.";
+const TEAM_MISMATCH_MESSAGE =
+  'This device is signed in as a different team. Tap Change to rejoin.';
+const GENERIC_MESSAGE = 'Submission failed. Please try again.';
+const SUBMIT_TIMEOUT_MS = 45_000;
+
+function serverMessage(body: CreateSubmissionResponse | null): string | null {
+  if (!body || typeof body !== 'object') return null;
+  if ('error' in body && typeof body.error === 'string' && body.error) {
+    return body.error;
+  }
+  const detail = (body as { detail?: unknown }).detail;
+  return typeof detail === 'string' && detail ? detail : null;
+}
+
+function isTeamMismatch(body: CreateSubmissionResponse | null): boolean {
+  if (!body || typeof body !== 'object') return false;
+  return (body as { detail?: unknown }).detail === 'Team mismatch.';
+}
 
 function displayAssetLabel(asset: ImagePicker.ImagePickerAsset): string {
   const name = asset.fileName?.trim();
@@ -68,21 +99,22 @@ export default function TaskSubmitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useAppTheme();
   const { role } = useRole();
+  const insets = useSafeAreaInsets();
 
   const [task, setTask] = useState<Task | null>(null);
   const [isLoadingTask, setIsLoadingTask] = useState(true);
   const [taskError, setTaskError] = useState<unknown>(undefined);
 
-  const [teamId, setTeamId] = useState('');
+  const { session, isLoading: isLoadingSession } = useTeamSession();
   const [textAnswer, setTextAnswer] = useState('');
   const [photoAsset, setPhotoAsset] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
   const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(null);
-  const [teamTouched, setTeamTouched] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccessId, setSubmitSuccessId] = useState<string | null>(null);
+  // Set when the server says this team already submitted for the task.
+  const [existingId, setExistingId] = useState<string | null>(null);
 
   const taskId = String(id ?? '');
 
@@ -92,22 +124,24 @@ export default function TaskSubmitScreen() {
     router.replace('/(tabs)');
   }, [role]);
 
+  // Joining (or rejoining) on /team swaps the session; drop the stale notice.
+  const sessionToken = session?.token ?? null;
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      // Do not leak participant autofill into organizer sessions.
-      const saved = await getSavedTeamId(
-        role === 'organizer' ? 'organizer' : 'participant',
-      );
-      if (!mounted) return;
-      if (saved && !teamId.trim()) setTeamId(saved);
-    })();
-    return () => {
-      mounted = false;
-    };
-    // Intentionally only runs once; don't override manual edits.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role]);
+    if (!sessionToken) return;
+    setSubmitError(null);
+    setExistingId(null);
+  }, [sessionToken]);
+
+  const showError = useCallback((message: string, existing?: string | null) => {
+    setSubmitError(message);
+    setExistingId(existing ?? null);
+    AccessibilityInfo.announceForAccessibility(message);
+  }, []);
+
+  const clearError = useCallback(() => {
+    setSubmitError(null);
+    setExistingId(null);
+  }, []);
 
   useEffect(() => {
     // `expo-image-picker` does not reliably expose a camera-availability API across SDKs.
@@ -146,7 +180,7 @@ export default function TaskSubmitScreen() {
 
   const canSubmit = useMemo(() => {
     if (!taskId.trim()) return false;
-    if (!teamId.trim()) return false;
+    if (!session) return false;
     if (!submissionType) return false;
     if (isSubmitting) return false;
     if (wantsText && wantsPhoto) {
@@ -159,20 +193,19 @@ export default function TaskSubmitScreen() {
     hasText,
     isSubmitting,
     photoAsset,
+    session,
     submissionType,
     taskId,
-    teamId,
     wantsPhoto,
     wantsText,
   ]);
 
   const onPickPhoto = useCallback(async () => {
-    setSubmitError(null);
-    setSubmitSuccessId(null);
+    clearError();
 
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      setSubmitError('Photo permission is required to pick an image.');
+      showError('Photo permission is required to pick an image.');
       return;
     }
 
@@ -184,15 +217,14 @@ export default function TaskSubmitScreen() {
     if (res.canceled) return;
     const asset = res.assets?.[0] ?? null;
     setPhotoAsset(asset);
-  }, []);
+  }, [clearError, showError]);
 
   const onTakePhoto = useCallback(async () => {
-    setSubmitError(null);
-    setSubmitSuccessId(null);
+    clearError();
 
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      setSubmitError('Camera permission is required to take a photo.');
+      showError('Camera permission is required to take a photo.');
       return;
     }
 
@@ -212,7 +244,7 @@ export default function TaskSubmitScreen() {
     if (res.canceled) return;
     const asset = res.assets?.[0] ?? null;
     setPhotoAsset(asset);
-  }, [onPickPhoto]);
+  }, [clearError, onPickPhoto, showError]);
 
   const onRemovePhoto = useCallback(() => {
     setPhotoAsset(null);
@@ -221,18 +253,20 @@ export default function TaskSubmitScreen() {
   const onSubmit = useCallback(async () => {
     if (!canSubmit) return;
     setIsSubmitting(true);
-    setSubmitError(null);
-    setSubmitSuccessId(null);
+    clearError();
+
+    // The photo upload can be slow, but a hung request must not spin forever.
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, SUBMIT_TIMEOUT_MS);
 
     try {
-      await saveTeamId(
-        teamId,
-        role === 'organizer' ? 'organizer' : 'participant',
-      );
-
+      // The team comes from the X-Team-Token header; no team_id is sent.
       const fd = new FormData();
       fd.append('task_id', taskId);
-      fd.append('team_id', teamId.trim());
 
       if (textAnswer.trim()) {
         fd.append('text_answer', textAnswer);
@@ -252,74 +286,109 @@ export default function TaskSubmitScreen() {
         } as unknown as Blob);
       }
 
-      const res = await fetch(apiUrl('/submissions/'), {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          // NOTE: Do not set Content-Type for FormData in React Native.
-        },
-        body: fd,
+      const { res, body } = await withTeamToken(async (token) => {
+        const response = await fetch(apiUrl('/submissions/'), {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+            // NOTE: Do not set Content-Type for FormData in React Native.
+            ...teamHeaders(token),
+          },
+          body: fd,
+          signal: controller.signal,
+        });
+        // withTeamToken only drops the session for a thrown 401 AppError.
+        if (response.status === 401) {
+          throw {
+            kind: 'unknown',
+            status: 401,
+            message: SESSION_EXPIRED_MESSAGE,
+          };
+        }
+
+        let parsed: CreateSubmissionResponse | null = null;
+        try {
+          parsed = (await response.json()) as CreateSubmissionResponse;
+        } catch {
+          parsed = null;
+        }
+        return { res: response, body: parsed };
       });
 
-      let body: CreateSubmissionResponse | null = null;
-      try {
-        body = (await res.json()) as CreateSubmissionResponse;
-      } catch {
-        body = null;
-      }
-
       if (!res.ok) {
-        setSubmitError(
-          body && typeof body === 'object'
-            ? 'error' in body && typeof body.error === 'string' && body.error
-              ? body.error
-              : 'detail' in body &&
-                  typeof body.detail === 'string' &&
-                  body.detail
-                ? body.detail
-                : 'Submission failed. Please try again.'
-            : 'Submission failed. Please try again.',
-        );
+        if (res.status === 403 && isTeamMismatch(body)) {
+          showError(TEAM_MISMATCH_MESSAGE);
+          return;
+        }
+        showError(serverMessage(body) ?? GENERIC_MESSAGE);
         return;
       }
 
       if (body && typeof body === 'object' && 'error' in body) {
-        setSubmitError(
-          body.error || 'Duplicate submission blocked for this task.',
-        );
+        const existing =
+          typeof body.existing_submission_id === 'string' &&
+          body.existing_submission_id
+            ? body.existing_submission_id
+            : null;
+        if (existing) {
+          showError('Already submitted', existing);
+        } else {
+          showError(
+            body.error || 'Duplicate submission blocked for this task.',
+          );
+        }
         return;
       }
 
       const ok = body as CreateSubmissionOk | null;
       if (ok?.submission_id && ok?.status !== 'error') {
-        setSubmitSuccessId(ok.submission_id);
         router.replace({
           pathname: '/submissions/[id]',
           params: { id: ok.submission_id },
         });
       } else {
-        setSubmitError(
+        showError(
           ok?.status === 'error'
             ? 'Photo upload failed. Please try again.'
-            : 'Submission failed. Please try again.',
+            : GENERIC_MESSAGE,
         );
       }
     } catch (e) {
-      setSubmitError(
-        e instanceof Error ? e.message : 'Submission failed. Please try again.',
-      );
+      if (isNoTeamSessionError(e)) {
+        showError('Join your team to submit.');
+      } else if (isAppError(e) && e.status === 401) {
+        showError(SESSION_EXPIRED_MESSAGE);
+      } else if (timedOut || toAppError(e).kind === 'network') {
+        showError(NETWORK_MESSAGE);
+      } else {
+        // Never surface a raw exception message.
+        showError(GENERIC_MESSAGE);
+      }
     } finally {
+      clearTimeout(timer);
       setIsSubmitting(false);
     }
-  }, [canSubmit, photoAsset, role, taskId, teamId, textAnswer]);
+  }, [canSubmit, clearError, photoAsset, showError, taskId, textAnswer]);
+
+  const onJoinTeam = useCallback(() => {
+    router.push('/team');
+  }, []);
 
   const onBackToTasks = useCallback(() => {
     router.replace('/(tabs)');
   }, []);
 
+  const onViewExisting = useCallback(() => {
+    if (!existingId) return;
+    router.push({
+      pathname: '/submissions/[id]',
+      params: { id: existingId },
+    });
+  }, [existingId]);
+
   const meta = task ? typeMeta(task.type) : null;
-  const teamFieldError =
-    teamTouched && !teamId.trim() ? 'Enter your team ID to submit.' : undefined;
+  const showJoin = !isLoadingSession && !session;
+  const teamName = session?.teamName.trim() || 'Unnamed team';
 
   return (
     <SafeScreen>
@@ -327,7 +396,7 @@ export default function TaskSubmitScreen() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={Spacing.xxl}
       >
         <ScrollView
@@ -440,22 +509,61 @@ export default function TaskSubmitScreen() {
           ) : null}
 
           <View style={styles.section}>
-            <AppText variant="overline" tone="tertiary">
+            <AppText
+              variant="overline"
+              tone="tertiary"
+              accessibilityRole="header"
+            >
               Your team
             </AppText>
-            <AppInput
-              label="Team ID"
-              value={teamId}
-              onChangeText={setTeamId}
-              onBlur={() => setTeamTouched(true)}
-              placeholder="e.g. huskies-07"
-              hint="We’ll remember this for your next submission."
-              error={teamFieldError}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!isSubmitting}
-              returnKeyType="done"
-            />
+            <AppCard variant="outlined">
+              <View style={styles.teamRow}>
+                <View
+                  style={[
+                    styles.teamIcon,
+                    { backgroundColor: colors.accentSoft },
+                  ]}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                >
+                  <IconSymbol
+                    name="person.2.fill"
+                    size={17}
+                    color={colors.accent}
+                  />
+                </View>
+                <View
+                  style={styles.teamBody}
+                  accessible={Boolean(session)}
+                  accessibilityLabel={
+                    session ? `Submitting as ${teamName}` : undefined
+                  }
+                >
+                  {isLoadingSession ? (
+                    <Skeleton width="55%" height={18} />
+                  ) : session ? (
+                    <AppText variant="title" numberOfLines={2}>
+                      {`Submitting as ${teamName}`}
+                    </AppText>
+                  ) : (
+                    <AppText variant="callout" tone="secondary">
+                      Join your team with its invite code to submit.
+                    </AppText>
+                  )}
+                </View>
+                {session ? (
+                  <AppButton
+                    tone="ghost"
+                    size="md"
+                    onPress={onJoinTeam}
+                    disabled={isSubmitting}
+                    accessibilityLabel="Change team"
+                  >
+                    Change
+                  </AppButton>
+                ) : null}
+              </View>
+            </AppCard>
           </View>
 
           {wantsText ? (
@@ -621,60 +729,74 @@ export default function TaskSubmitScreen() {
               )}
             </View>
           ) : null}
+        </ScrollView>
 
+        <View
+          style={[
+            styles.footer,
+            {
+              borderTopColor: colors.border,
+              paddingBottom: Math.max(Spacing.lg, insets.bottom + Spacing.sm),
+            },
+          ]}
+        >
           {submitError ? (
-            <AppCard
-              variant="outlined"
-              style={{ backgroundColor: colors.dangerSoft }}
+            <View
+              style={[
+                styles.footerAlert,
+                { backgroundColor: colors.dangerSoft },
+              ]}
+              accessibilityRole="alert"
             >
-              <View style={styles.noticeRow}>
+              <View
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              >
                 <IconSymbol
                   name="exclamationmark.triangle.fill"
                   size={18}
                   color={colors.danger}
                 />
-                <AppText
-                  variant="callout"
-                  style={[styles.noticeText, { color: colors.onDangerSoft }]}
-                >
-                  {submitError}
-                </AppText>
               </View>
-            </AppCard>
+              <AppText
+                variant="callout"
+                style={[styles.noticeText, { color: colors.onDangerSoft }]}
+              >
+                {submitError}
+              </AppText>
+            </View>
           ) : null}
 
-          {submitSuccessId ? (
-            <AppCard
-              variant="outlined"
-              style={{ backgroundColor: colors.successSoft }}
-            >
-              <View style={styles.noticeRow}>
+          {showJoin ? (
+            <AppButton
+              fullWidth
+              size="lg"
+              onPress={onJoinTeam}
+              icon={
                 <IconSymbol
-                  name="checkmark.circle.fill"
+                  name="person.2.fill"
                   size={18}
-                  color={colors.success}
+                  color={colors.onAccent}
                 />
-                <AppText
-                  variant="callout"
-                  style={[styles.noticeText, { color: colors.onSuccessSoft }]}
-                >
-                  {`Submitted. ID: ${submitSuccessId}`}
-                </AppText>
-              </View>
-            </AppCard>
-          ) : null}
-        </ScrollView>
-
-        <View style={[styles.footer, { borderTopColor: colors.border }]}>
-          <AppButton
-            fullWidth
-            size="lg"
-            onPress={onSubmit}
-            disabled={!canSubmit}
-            loading={isSubmitting}
-          >
-            Submit
-          </AppButton>
+              }
+            >
+              Join your team
+            </AppButton>
+          ) : existingId ? (
+            <AppButton fullWidth size="lg" onPress={onViewExisting}>
+              View submission
+            </AppButton>
+          ) : (
+            <AppButton
+              fullWidth
+              size="lg"
+              onPress={onSubmit}
+              disabled={!canSubmit}
+              loading={isSubmitting}
+            >
+              {submitError && session ? 'Try again' : 'Submit'}
+            </AppButton>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeScreen>
@@ -736,6 +858,21 @@ const styles = StyleSheet.create({
   section: {
     gap: Spacing.md,
   },
+  teamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  teamIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  teamBody: {
+    flex: 1,
+  },
   dropzoneFilled: {
     gap: Spacing.md,
   },
@@ -795,8 +932,15 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   footer: {
+    gap: Spacing.md,
     paddingTop: Spacing.base,
-    paddingBottom: Spacing.lg,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  footerAlert: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.sm,
   },
 });
