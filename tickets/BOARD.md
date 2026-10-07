@@ -9,7 +9,7 @@
 | T-04 | Secure, verified organizer session in app  | in-progress | inline | M-00, T-02 | 2              |
 | T-05 | Merge the two organizer route trees        | done        | inline | none       | 2              |
 | T-06 | Sanitize scoring errors; CORS parse fixes  | done        | inline | T-03       | 2              |
-| T-07 | Validate photo uploads before storing      | in-progress | inline | T-01, T-02 | 3              |
+| T-07 | Validate photo uploads before storing      | done        | inline | T-01, T-02 | 3              |
 | T-08 | Return only participant-safe submissions   | todo        | inline | T-07       | 4              |
 | M-01 | Push T-01 migration to live DB (manager)   | todo        | inline | T-01       | after T-01     |
 
@@ -38,8 +38,17 @@ Follow-ups (to file as issues at close-out):
   (never `--forwarded-allow-ips="*"`).
 - Organizer token revocation or logout (today only rotating the code works).
 - Validate `queue_id`/`submission_id` as UUIDs (400 instead of 500).
+- `services/scoring.py` `_mime_type_from_path` uses `mimetypes`, which on
+  Python 3.9 labels `.heic`/`.heif` photos as JPEG for the vision model.
+- The one-submission-per-team-task check is not atomic and no unique
+  constraint backs it (dropped in `20260425010000`); concurrent submits can both
+  pass. Needs a partial unique index excluding `status = 'error'`.
 
 Decisions log:
+
+- 2026-10-07: T-07: any `status = 'error'` submission (failed upload or failed
+  scoring) no longer blocks a resubmit (issue #41). Uploads are validated to
+  the bucket limits before any row or upload, and `upsert` is no longer used.
 
 - 2026-10-07: T-02 accepted without a third round. Review and audit found no
   blockers; hardening items (KDF, limiter, revocation) are follow-up issues.

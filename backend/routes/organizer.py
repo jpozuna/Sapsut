@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import mimetypes
 import os
 import uuid
 from datetime import datetime
@@ -21,6 +20,7 @@ from auth.organizer import (
 from services import get_supabase
 from services.scoring import _get_openai_client, score_submission, _finalize_score
 from services.storage import storage_bucket
+from services.uploads import read_validated_image
 
 logger = logging.getLogger(__name__)
 
@@ -152,13 +152,6 @@ def organizer_update_task(task_id: str, task: OrganizerTaskCreateIn) -> Any:
         raise HTTPException(status_code=400, detail="Failed to update task")
 
 
-def _mime_type_from_filename(filename: str) -> str:
-    mt, _ = mimetypes.guess_type(filename or "")
-    if mt and mt.startswith("image/"):
-        return mt
-    return "image/jpeg"
-
-
 class RubricOcrOut(BaseModel):
     text: str
     criteria: List[str]
@@ -172,16 +165,11 @@ async def ocr_rubric_image(task_id: str, image: UploadFile = File(...)) -> Rubri
     except Exception:
         raise HTTPException(status_code=400, detail="task_id must be a UUID")
 
-    img_bytes = await image.read()
-    if not img_bytes:
-        raise HTTPException(status_code=400, detail="Missing image bytes")
+    # Type (415) and size (413) are checked before OCR; reads at most 10 MB + 1 byte.
+    validated = await read_validated_image(image)
 
-    # Basic size guard (10MB) for OCR requests; can be adjusted.
-    if len(img_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Rubric image must be <= 10 MB.")
-
-    b64 = base64.b64encode(img_bytes).decode("utf-8")
-    image_mime = _mime_type_from_filename(image.filename or "")
+    b64 = base64.b64encode(validated.data).decode("utf-8")
+    image_mime = validated.content_type
 
     try:
         openai_client = _get_openai_client()
@@ -241,21 +229,19 @@ async def upload_task_photo(task_id: str, photo: UploadFile = File(...)) -> Dict
     except Exception:
         raise HTTPException(status_code=400, detail="task_id must be a UUID")
 
-    photo_bytes = await photo.read()
-    if not photo_bytes:
-        raise HTTPException(status_code=400, detail="Missing photo bytes")
-
-    content_type = (photo.content_type or "application/octet-stream").strip()
-    ext = (content_type.split("/")[-1] if "/" in content_type else "bin") or "bin"
+    # Type (415) and size (413) are checked before anything is stored.
+    validated = await read_validated_image(photo)
+    photo_bytes = validated.data
+    content_type = validated.content_type
     photo_id = str(uuid.uuid4())
-    stored_path = f"tasks/{task_id}/{photo_id}.{ext}"
+    stored_path = f"tasks/{task_id}/{photo_id}.{validated.ext}"
 
     try:
         await anyio.to_thread.run_sync(
             lambda: supabase.storage.from_(storage_bucket()).upload(
                 stored_path,
                 photo_bytes,
-                file_options={"content-type": content_type, "upsert": "true"},
+                file_options={"content-type": content_type},
             )
         )
     except Exception:

@@ -27,6 +27,7 @@ class _TableQuery:
         self._db = db
         self._name = name
         self._filters = {}
+        self._neq = {}
         self._limit = None
         self._order = None
         self._insert_payloads = []
@@ -39,6 +40,10 @@ class _TableQuery:
 
     def eq(self, k, v):
         self._filters[k] = v
+        return self
+
+    def neq(self, k, v):
+        self._neq[k] = v
         return self
 
     def limit(self, n):
@@ -65,6 +70,8 @@ class _TableQuery:
         rows = list(self._db.get(self._name, []))
         for k, v in self._filters.items():
             rows = [r for r in rows if r.get(k) == v]
+        for k, v in self._neq.items():
+            rows = [r for r in rows if r.get(k) != v]
         if self._order:
             key, desc = self._order
             rows.sort(key=lambda r: r.get(key), reverse=desc)
@@ -302,3 +309,81 @@ def test_post_submission_insert_failure_returns_generic_detail(app_and_client, m
     assert resp.status_code == 400
     assert resp.json()["detail"] == "Invalid submission payload"
     assert "secret_constraint_xyz" not in resp.text
+
+
+TASK_ID = "11111111-1111-1111-1111-111111111111"
+TEAM_ID = "22222222-2222-2222-2222-222222222222"
+
+
+def _post_photo(client, data, content_type, filename="x.png"):
+    return client.post(
+        "/submissions/",
+        data={"task_id": TASK_ID, "team_id": TEAM_ID, "text_answer": ""},
+        files={"photo": (filename, data, content_type)},
+    )
+
+
+def test_post_submission_normalizes_jpg_content_type(app_and_client):
+    fake, client = app_and_client
+    resp = _post_photo(client, b"jpgbytes", "image/jpg", filename="a.jpg")
+    assert resp.status_code == 200
+    path, _, options = fake.upload_calls[0]
+    assert path.endswith(".jpg")
+    assert options == {"content-type": "image/jpeg"}
+    assert "upsert" not in options
+
+
+@pytest.mark.parametrize(
+    "content_type", ["image/png", "image/webp", "image/heic", "image/heif", "IMAGE/JPEG"]
+)
+def test_post_submission_accepts_allowed_types(app_and_client, content_type):
+    fake, client = app_and_client
+    resp = _post_photo(client, b"bytes", content_type)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+    assert len(fake.upload_calls) == 1
+
+
+def test_post_submission_disallowed_type_is_415_with_no_row_or_upload(app_and_client):
+    fake, client = app_and_client
+    resp = _post_photo(client, b"GIF89a", "image/gif", filename="x.gif")
+    assert resp.status_code == 415
+    assert isinstance(resp.json()["detail"], str)
+    assert fake.upload_calls == []
+    assert fake.db["submissions"] == []
+
+
+def test_post_submission_oversized_is_413_with_no_row_or_upload(app_and_client):
+    from services.uploads import MAX_UPLOAD_BYTES
+
+    fake, client = app_and_client
+    resp = _post_photo(client, b"a" * (MAX_UPLOAD_BYTES + 1), "image/png")
+    assert resp.status_code == 413
+    assert isinstance(resp.json()["detail"], str)
+    assert fake.upload_calls == []
+    assert fake.db["submissions"] == []
+
+
+def test_resubmit_allowed_after_error_row_but_not_after_pending(app_and_client):
+    fake, client = app_and_client
+    # Single-submission task.
+    fake.db["tasks"][0]["allow_multiple_submissions"] = False
+    fake.db["tasks"][0]["type"] = "photo"
+
+    fake.fail_upload = True
+    first = _post_photo(client, b"bytes", "image/png")
+    assert first.json()["status"] == "error"
+    assert [r["status"] for r in fake.db["submissions"]] == ["error"]
+
+    fake.fail_upload = False
+    second = _post_photo(client, b"bytes", "image/png")
+    assert second.status_code == 200
+    assert second.json()["status"] == "pending"
+    assert len(fake.upload_calls) == 1
+
+    # A non-error row still blocks further submissions.
+    third = _post_photo(client, b"bytes", "image/png")
+    assert third.status_code == 200
+    body = third.json()
+    assert "only allows one submission" in body["error"]
+    assert body["existing_submission_id"] == second.json()["submission_id"]

@@ -12,6 +12,7 @@ from auth.organizer import require_organizer
 from services import get_supabase
 from services.scoring import score_submission
 from services.storage import storage_bucket
+from services.uploads import read_validated_image
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,8 @@ async def create_submission(
             .select("id")
             .eq("task_id", task_id)
             .eq("team_id", team_id)
+            # A failed upload leaves an error row; it must not block a retry.
+            .neq("status", "error")
             .limit(1)
             .execute()
             .data
@@ -164,10 +167,11 @@ async def create_submission(
     stored_photo_path = normalized_photo_path
     if (stored_photo_path is None) and (photo is not None):
         # Important: read and upload during the request lifecycle.
-        photo_bytes = await photo.read()
-        content_type = (photo.content_type or "application/octet-stream").strip()
-        ext = (content_type.split("/")[-1] if "/" in content_type else "bin") or "bin"
-        stored_photo_path = f"{team_id}/{task_id}/{submission_id}.{ext}"
+        # Validates type (415) and size (413) before anything is stored or inserted.
+        validated = await read_validated_image(photo)
+        photo_bytes = validated.data
+        content_type = validated.content_type
+        stored_photo_path = f"{team_id}/{task_id}/{submission_id}.{validated.ext}"
         try:
             # Supabase Storage upload is synchronous; offload to worker thread.
             await anyio.to_thread.run_sync(
@@ -175,7 +179,7 @@ async def create_submission(
                     stored_photo_path,
                     photo_bytes,
                     # supabase-py passes these through to HTTP headers; values must be strings.
-                    file_options={"content-type": content_type, "upsert": "true"},
+                    file_options={"content-type": content_type},
                 )
             )
         except Exception:
