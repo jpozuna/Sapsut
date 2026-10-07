@@ -12,60 +12,29 @@
 | T-07 | Validate photo uploads before storing      | done   | inline | T-01, T-02 | 3              |
 | T-08 | Return only participant-safe submissions   | done   | inline | T-07       | 4              |
 | T-09 | Hide task rubric from `GET /tasks/`        | done   | inline | T-08       | 5              |
-| M-01 | Push T-01 migration to live DB (manager)   | todo   | inline | T-01       | after T-01     |
+| M-01 | Push T-01 migration to live DB (manager)   | done   | inline | T-01       | after T-01     |
 
 Concurrency cap: 3
 
-Out of scope: issue #53 item 6 (team isolation, client `photo_path`, invite code
-on `GET /teams/{id}`). The manager opens a separate GitHub issue for it at close-out.
+Out of scope: issue #53 item 6 (team isolation), now #55.
 
-Follow-ups (to file as issues at close-out):
+Follow-ups (filed 2026-10-07):
 
-- Item 6 team isolation, plus client `photo_path` and the invite code returned by `GET /teams/{id}`.
-  Higher priority than it looked: `POST /submissions/` stores a client
-  `photo_path` verbatim and `GET /submissions/{id}` signs it, so anyone who knows
-  an object path (other teams' photos, organizer `tasks/...` reference photos)
-  gets a 10-minute URL to it. Validate the `{team_id}/{task_id}/` prefix or drop
-  the field.
-- Organizer review screen uses the raw storage path as the image URI; needs
-  `photo_signed_url` from `GET /organizer/review-queue`.
-- Delete dead `lib/supabase.ts` and remove `@supabase/supabase-js` and the
-  `EXPO_PUBLIC_SUPABASE_*` env vars.
-- Upload bodies are parsed before auth: add a request body cap (middleware or proxy).
-- Unauthenticated `POST /submissions/` triggers paid AI scoring with no rate limit;
-  invite-code lookup can be brute-forced.
-- Disable `/docs` and `/openapi.json` and drop `env` from `/health` in production.
-- `replace_task_criteria` deletes then inserts without a transaction.
-- Disable Auth signup in the hosted Supabase project settings (user action).
-- Organizer token key: slow KDF (`pbkdf2_hmac`/`scrypt`) and/or optional
-  `ORGANIZER_SESSION_SECRET`, startup warning on codes under 12 characters.
-- Organizer limiter: global failure ceiling, key IPv6 by /64, evict non-blocked
-  IPs first at the cap, log blocks (IP and time only), document proxy trust
-  (never `--forwarded-allow-ips="*"`).
-- Organizer token revocation or logout (today only rotating the code works).
-- Validate `queue_id`/`submission_id` as UUIDs (400 instead of 500).
-- Enforce `is_active`/`opens_at`/`closes_at` server-side on `GET /tasks/` and
-  `POST /submissions/` (today only the client filters).
-- UI: relabel the "AI rationale" card on `app/submissions/[id].tsx` (now a fixed
-  status message), drop the dead confidence block, and decide how organizer
-  override feedback reaches participants. Organizers should keep hints out of
-  task `description` (public and sent to the model).
-- Organizer screens (`app/(tabs)/organizer/{create-task,review,history}.tsx`):
-  remove the leftover "Organizer code" field and `canLoad` gating, call
-  `organizerJson(path, init)` directly, then delete the deprecated code-argument
-  overloads, `setOrganizerCode` and the `'session'` marker shim.
-- `lib/api.ts`: reject a non-https API base URL in production builds (the
-  organizer code and token would otherwise travel in cleartext).
-- `lib/organizer-session.ts`: retry the first SecureStore read if it throws
-  (for example device locked at launch), and time-box SecureStore calls so the
-  write queue can't hang sign-in.
-- `services/scoring.py` `_mime_type_from_path` uses `mimetypes`, which on
-  Python 3.9 labels `.heic`/`.heif` photos as JPEG for the vision model.
-- The one-submission-per-team-task check is not atomic and no unique
-  constraint backs it (dropped in `20260425010000`); concurrent submits can both
-  pass. Needs a partial unique index excluding `status = 'error'`.
+- #55 Team isolation: team credential and validated `photo_path` (high priority)
+- #56 Abuse limits: submission, invite-code and team-create rate limits, body cap
+- #57 Organizer auth hardening: token key, limiter, revocation, https
+- #58 Submission integrity and production hardening
+- #59 Organizer screens: remove leftover code field, signed review images
+- #60 Participant submission screen: rationale label, confidence, feedback
+- #61 Cleanups: dead Supabase client, SecureStore retry, HEIC MIME in scoring
+
+Auth signup in the hosted Supabase project is disabled (user, 2026-10-07).
 
 Decisions log:
+
+- 2026-10-07: M-01 done. The user pushed `20261007000000` to the live project;
+  `supabase migration list` shows it applied on the remote. Follow-ups filed as
+  #55-#61.
 
 - 2026-10-07: T-04 accepted after two rounds. The app stores only the session
   token (SecureStore on native, `WHEN_UNLOCKED_THIS_DEVICE_ONLY`; memory only on
