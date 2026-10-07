@@ -1,13 +1,18 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { EmptyState } from '@/components/empty-state';
+import { SafeScreen, TAB_BAR_CLEARANCE } from '@/components/safe-screen';
 import { ScreenState } from '@/components/screen-state';
-import { SafeScreen } from '@/components/safe-screen';
-import { AppButton, AppCard } from '@/components/ui';
-import { textStyles, useAppTheme } from '@/lib/ui';
+import { AppCard, AppText, IconSymbol, ScreenHeader } from '@/components/ui';
+import { Radius, Spacing } from '@/constants/theme';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
+import { useRole } from '@/lib/role-context';
+import { getSavedTeamId } from '@/lib/team-session';
+import { useAppTheme } from '@/lib/ui';
 
 type LeaderboardTeam = {
   id: string;
@@ -25,23 +30,37 @@ function toScore(team: LeaderboardTeam): number {
 }
 
 export default function LeaderboardScreen() {
-  const { textColor, backgroundColor, tint } = useAppTheme();
+  const { colors } = useAppTheme();
+  const { role } = useRole();
 
   const [teams, setTeams] = useState<LeaderboardTeam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(undefined);
+  const [myTeamId, setMyTeamId] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inFlightRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const saved = await getSavedTeamId(
+        role === 'organizer' ? 'organizer' : 'participant',
+      );
+      if (mounted) setMyTeamId(saved);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [role]);
+
   const fetchLeaderboard = useCallback(async () => {
-    // Prevent overlapping requests (e.g., slow networks vs 5s polling interval).
+    // Prevent overlapping requests (slow networks vs the 5s poll interval).
     if (inFlightRef.current) return;
     inFlightRef.current = true;
 
-    // Cancel any previous request (e.g., if user blurs/focuses quickly).
     if (abortRef.current) abortRef.current.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -51,8 +70,8 @@ export default function LeaderboardScreen() {
         signal: ac.signal,
       });
       const list = Array.isArray(res?.teams) ? res.teams : [];
-      // Only clear an error once we know the request succeeded. Otherwise polling can
-      // briefly hide a real error and make the UI look like "missing data".
+      // Only clear the error once the request actually succeeded, otherwise
+      // polling can briefly mask a real failure as "missing data".
       setError(undefined);
       setTeams(list);
     } finally {
@@ -64,7 +83,6 @@ export default function LeaderboardScreen() {
     useCallback(() => {
       let mounted = true;
 
-      // Initial (or re-focus) load.
       (async () => {
         setError(undefined);
         setIsLoading(true);
@@ -77,13 +95,11 @@ export default function LeaderboardScreen() {
         }
       })();
 
-      // Poll only while this tab is focused.
-      const intervalMs = 5000;
       pollRef.current = setInterval(() => {
         fetchLeaderboard().catch(() => {
-          // Keep previous data; error UI is handled by the explicit screen state on first load / retries.
+          // Keep prior data; first-load errors are handled by ScreenState.
         });
-      }, intervalMs);
+      }, 5000);
 
       return () => {
         mounted = false;
@@ -96,9 +112,10 @@ export default function LeaderboardScreen() {
     }, [fetchLeaderboard]),
   );
 
-  const sorted = useMemo(() => {
-    return [...teams].sort((a, b) => toScore(b) - toScore(a));
-  }, [teams]);
+  const sorted = useMemo(
+    () => [...teams].sort((a, b) => toScore(b) - toScore(a)),
+    [teams],
+  );
 
   const onRetry = useCallback(async () => {
     setIsLoading(true);
@@ -122,99 +139,131 @@ export default function LeaderboardScreen() {
     }
   }, [fetchLeaderboard]);
 
+  const medalColor = (rank: number) =>
+    rank === 1 ? colors.gold : rank === 2 ? colors.silver : colors.bronze;
+
   return (
-    <ScreenState
-      isLoading={isLoading}
-      error={error}
-      onRetry={onRetry}
-      loadingLabel="Loading leaderboard…"
-    >
-      <SafeScreen backgroundColor={backgroundColor}>
-        <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>
-            Leaderboard
-          </Text>
-          <Text
-            style={[textStyles.default, styles.subtitle, { color: textColor }]}
-          >
-            Live team standings (updates automatically).
-          </Text>
-        </View>
+    <ScreenState isLoading={isLoading} error={error} onRetry={onRetry}>
+      <SafeScreen>
+        <ScreenHeader
+          title="Leaderboard"
+          subtitle={
+            sorted.length > 0
+              ? `${sorted.length} ${sorted.length === 1 ? 'team' : 'teams'} competing`
+              : 'Live team standings'
+          }
+          rightSlot={
+            <View style={styles.liveRow}>
+              <View style={[styles.dot, { backgroundColor: colors.success }]} />
+              <AppText variant="overline" tone="tertiary">
+                Live
+              </AppText>
+            </View>
+          }
+        />
 
         <FlatList<LeaderboardTeam>
           data={sorted}
           keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,
             sorted.length === 0 ? styles.listContentEmpty : null,
           ]}
-          refreshing={isRefreshing}
-          onRefresh={onRefresh}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
+            />
+          }
           renderItem={({ item, index }) => {
-            return (
-              <AppCard style={styles.row} contentStyle={styles.rowContent}>
-                <View style={styles.rowLeft}>
-                  <Text
-                    style={[
-                      textStyles.defaultSemiBold,
-                      styles.rank,
-                      { color: textColor },
-                    ]}
-                  >
-                    {index + 1}
-                  </Text>
-                  <Text
-                    style={[
-                      textStyles.subtitle,
-                      styles.teamName,
-                      { color: textColor },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {item.name || 'Unnamed team'}
-                  </Text>
-                </View>
+            const rank = index + 1;
+            const isPodium = rank <= 3;
+            const isMine = Boolean(myTeamId && item.id === myTeamId);
 
-                <Text
+            return (
+              <Animated.View
+                entering={FadeInDown.delay(Math.min(index, 8) * 40).duration(
+                  260,
+                )}
+              >
+                <AppCard
+                  variant={isPodium ? 'elevated' : 'outlined'}
+                  padded={false}
                   style={[
-                    textStyles.defaultSemiBold,
-                    styles.score,
-                    { color: tint },
+                    styles.row,
+                    isMine
+                      ? { borderWidth: 1.5, borderColor: colors.accent }
+                      : null,
                   ]}
                 >
-                  {toScore(item)}
-                </Text>
-              </AppCard>
+                  <View
+                    style={[
+                      styles.rankBadge,
+                      {
+                        backgroundColor: isPodium
+                          ? medalColor(rank)
+                          : colors.surfaceSunken,
+                      },
+                    ]}
+                  >
+                    {isPodium ? (
+                      <IconSymbol
+                        name="trophy.fill"
+                        size={15}
+                        color={colors.onAccent}
+                      />
+                    ) : (
+                      <AppText variant="label" tone="tertiary">
+                        {String(rank)}
+                      </AppText>
+                    )}
+                  </View>
+
+                  <View style={styles.nameBlock}>
+                    <AppText variant="title" numberOfLines={1}>
+                      {item.name || 'Unnamed team'}
+                    </AppText>
+                    {isMine ? (
+                      <AppText variant="caption" tone="accent">
+                        Your team
+                      </AppText>
+                    ) : isPodium ? (
+                      <AppText variant="caption" tone="tertiary">
+                        {rank === 1
+                          ? 'Leading'
+                          : `${rank === 2 ? '2nd' : '3rd'} place`}
+                      </AppText>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.scoreBlock}>
+                    <AppText
+                      variant="numeric"
+                      style={{
+                        color: isPodium ? colors.accent : colors.textPrimary,
+                      }}
+                    >
+                      {String(toScore(item))}
+                    </AppText>
+                    <AppText variant="overline" tone="tertiary">
+                      pts
+                    </AppText>
+                  </View>
+                </AppCard>
+              </Animated.View>
             );
           }}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text
-                style={[
-                  textStyles.subtitle,
-                  styles.emptyTitle,
-                  { color: textColor },
-                ]}
-              >
-                No teams yet
-              </Text>
-              <Text
-                style={[
-                  textStyles.default,
-                  styles.emptyMessage,
-                  { color: textColor },
-                ]}
-              >
-                Once teams join and score points, they’ll show up here.
-              </Text>
-              <AppButton
-                tone="secondary"
-                onPress={onRetry}
-                style={styles.retryButton}
-              >
-                Refresh
-              </AppButton>
-            </View>
+            <EmptyState
+              icon="person.2.fill"
+              title="No teams yet"
+              message="Once teams join and start scoring, standings will appear here."
+              actionLabel="Refresh"
+              onAction={onRetry}
+            />
           }
         />
       </SafeScreen>
@@ -223,63 +272,44 @@ export default function LeaderboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    gap: 6,
-    paddingBottom: 10,
+  liveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs + 1,
   },
-  subtitle: {
-    opacity: 0.8,
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: Radius.pill,
   },
   listContent: {
-    gap: 10,
-    paddingVertical: 8,
+    gap: Spacing.sm,
+    paddingBottom: TAB_BAR_CLEARANCE,
   },
   listContentEmpty: {
     flexGrow: 1,
     justifyContent: 'center',
   },
   row: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  rowContent: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
   },
-  rowLeft: {
-    flexDirection: 'row',
+  rankBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: Radius.pill,
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+  },
+  nameBlock: {
     flex: 1,
+    gap: 1,
   },
-  rank: {
-    width: 28,
-    textAlign: 'center',
-    opacity: 0.85,
-  },
-  teamName: {
-    flex: 1,
-  },
-  score: {
-    fontSize: 16,
-  },
-  empty: {
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 24,
-  },
-  emptyTitle: {
-    textAlign: 'center',
-  },
-  emptyMessage: {
-    textAlign: 'center',
-    opacity: 0.85,
-  },
-  retryButton: {
-    marginTop: 4,
+  scoreBlock: {
+    alignItems: 'flex-end',
+    gap: 0,
   },
 });

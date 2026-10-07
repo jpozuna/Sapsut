@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { Image } from 'expo-image';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { EmptyState } from '@/components/empty-state';
 import { SafeScreen } from '@/components/safe-screen';
-import { textStyles, useAppTheme } from '@/lib/ui';
+import {
+  AppButton,
+  AppCard,
+  AppChip,
+  AppInput,
+  AppText,
+  IconSymbol,
+  NavBar,
+  SkeletonCard,
+} from '@/components/ui';
+import type { AppChipTone } from '@/components/ui';
+import { Radius, Spacing } from '@/constants/theme';
 import { toAppError } from '@/lib/app-error';
 import { organizerJson } from '@/lib/organizer-api';
 import { useRole } from '@/lib/role-context';
+import { useAppTheme } from '@/lib/ui';
 
 type Submission = {
   id: string;
@@ -40,8 +47,34 @@ type ReviewQueueRow = {
   submission?: Submission | null;
 };
 
+/** Confidence can arrive as a 0–1 ratio or a 0–100 percentage. */
+function toConfidencePercent(raw: number | null | undefined): number | null {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  const pct = n <= 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function confidenceTone(pct: number): AppChipTone {
+  if (pct >= 80) return 'success';
+  if (pct >= 50) return 'warning';
+  return 'danger';
+}
+
+function formatWhen(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export default function OrganizerReviewDashboard() {
-  const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
+  const { colors } = useAppTheme();
   const goToCreate = useCallback(() => {
     // keep organizer code in session via RoleContext
     // navigation only; API calls still require entering/using the code field
@@ -190,7 +223,7 @@ export default function OrganizerReviewDashboard() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: ReviewQueueRow }) => {
+    ({ item, index }: { item: ReviewQueueRow; index: number }) => {
       const s = item.submission ?? null;
       const content =
         (s?.gpt4o_description ?? '').trim() ||
@@ -200,286 +233,357 @@ export default function OrganizerReviewDashboard() {
       const busy = Boolean(busyById[item.id]);
       const suggested = item.claude_score;
 
+      const confidence = toConfidencePercent(item.confidence ?? s?.confidence);
+      const photo = (s?.photo_url ?? '').trim();
+      const team = (s?.team_id ?? '').trim();
+      const task = (s?.task_id ?? '').trim();
+      const when = formatWhen(item.created_at ?? s?.created_at);
+      const rationale = (item.claude_rationale ?? '').trim();
+
       return (
-        <View style={[styles.card, { borderColor: border }]}>
-          <View style={styles.cardHeader}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Submission
-            </Text>
-            <Text
-              style={[textStyles.default, styles.meta, { color: textColor }]}
-            >
-              Queue ID:{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {item.id}
-              </Text>
-            </Text>
-          </View>
+        <Animated.View
+          entering={FadeInDown.delay(Math.min(index, 8) * 45).duration(280)}
+        >
+          <AppCard>
+            <View style={styles.cardHeader}>
+              <View style={styles.identity}>
+                <AppText variant="title" numberOfLines={1}>
+                  {team ? `Team ${team}` : 'Unknown team'}
+                </AppText>
+                <AppText variant="caption" tone="tertiary" numberOfLines={1}>
+                  {task ? `Task ${task}` : `Queue ${item.id}`}
+                </AppText>
+              </View>
 
-          <Text style={[textStyles.default, styles.body, { color: textColor }]}>
-            {content}
-          </Text>
+              <View
+                style={[
+                  styles.scoreBadge,
+                  { backgroundColor: colors.surfaceSunken },
+                ]}
+              >
+                <AppText variant="numeric" style={styles.scoreValue}>
+                  {suggested === null || suggested === undefined
+                    ? '—'
+                    : String(suggested)}
+                </AppText>
+                <AppText variant="overline" tone="tertiary">
+                  AI pts
+                </AppText>
+              </View>
+            </View>
 
-          <View style={styles.row}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Suggested score:
-            </Text>
-            <Text style={[textStyles.default, { color: textColor }]}>
-              {suggested ?? '—'}
-            </Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Claude rationale:
-            </Text>
-          </View>
-          <Text style={[textStyles.default, styles.body, { color: textColor }]}>
-            {(item.claude_rationale ?? '').trim() || '—'}
-          </Text>
+            <View style={styles.chipRow}>
+              {confidence !== null ? (
+                <AppChip tone={confidenceTone(confidence)}>
+                  {`${confidence}% confidence`}
+                </AppChip>
+              ) : (
+                <AppChip tone="neutral">Confidence unknown</AppChip>
+              )}
+              {when ? <AppChip tone="neutral">{when}</AppChip> : null}
+            </View>
 
-          <View style={styles.actions}>
-            <Pressable
-              onPress={() => onApprove(item)}
+            {photo ? (
+              <Image
+                source={{ uri: photo }}
+                style={[
+                  styles.photo,
+                  { backgroundColor: colors.surfaceSunken },
+                ]}
+                contentFit="cover"
+                transition={180}
+              />
+            ) : null}
+
+            <View style={styles.section}>
+              <AppText variant="overline" tone="tertiary">
+                Submission
+              </AppText>
+              <AppText variant="callout" tone="secondary">
+                {content}
+              </AppText>
+            </View>
+
+            <View style={styles.section}>
+              <AppText variant="overline" tone="tertiary">
+                AI rationale
+              </AppText>
+              <AppText variant="callout" tone="secondary">
+                {rationale || '—'}
+              </AppText>
+            </View>
+
+            <View
+              style={[styles.divider, { backgroundColor: colors.border }]}
+            />
+
+            <AppButton
+              tone="primary"
+              fullWidth
+              loading={busy}
               disabled={busy || suggested === null || suggested === undefined}
-              style={({ pressed }) => [
-                styles.button,
-                { borderColor: tint },
-                pressed ? styles.buttonPressed : null,
-              ]}
+              onPress={() => onApprove(item)}
+              icon={
+                <IconSymbol
+                  name="checkmark.circle.fill"
+                  size={17}
+                  color={colors.onAccent}
+                />
+              }
             >
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Approve
-              </Text>
-            </Pressable>
+              {suggested === null || suggested === undefined
+                ? 'Approve'
+                : `Approve ${suggested} pts`}
+            </AppButton>
 
-            <View style={styles.overrideBox}>
-              <TextInput
+            <View style={styles.overrideRow}>
+              <AppInput
                 value={overrideScores[item.id] ?? ''}
                 onChangeText={(t) =>
                   setOverrideScores((prev) => ({ ...prev, [item.id]: t }))
                 }
-                placeholder="Custom score"
-                placeholderTextColor={border}
+                placeholder="Score"
                 keyboardType="number-pad"
                 editable={!busy}
-                style={[
-                  styles.input,
-                  { borderColor: border, color: colors.text },
-                ]}
+                containerStyle={styles.overrideInput}
               />
-              <Pressable
-                onPress={() => onOverride(item)}
+              <AppButton
+                tone="secondary"
                 disabled={busy}
-                style={({ pressed }) => [
-                  styles.button,
-                  { borderColor: border },
-                  pressed ? styles.buttonPressed : null,
-                ]}
+                onPress={() => onOverride(item)}
               >
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
-                >
-                  Override
-                </Text>
-              </Pressable>
+                Override
+              </AppButton>
             </View>
-
-            {busy ? <ActivityIndicator color={tint} /> : null}
-          </View>
-        </View>
+          </AppCard>
+        </Animated.View>
       );
     },
     [
-      border,
       busyById,
-      colors.text,
+      colors.border,
+      colors.onAccent,
+      colors.surfaceSunken,
       onApprove,
       onOverride,
       overrideScores,
-      textColor,
-      tint,
     ],
   );
 
   return (
-    <SafeScreen backgroundColor={backgroundColor}>
-      <View style={styles.navRow}>
-        <Pressable
-          onPress={goToCreate}
-          style={({ pressed }) => [
-            styles.navPill,
-            { borderColor: border },
-            pressed ? styles.buttonPressed : null,
-          ]}
-        >
-          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-            Create
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => {}}
-          style={({ pressed }) => [
-            styles.navPill,
-            { borderColor: tint, backgroundColor: tint },
-            pressed ? styles.buttonPressed : null,
-          ]}
-        >
-          <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
-            Review
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={goToHistory}
-          style={({ pressed }) => [
-            styles.navPill,
-            { borderColor: border },
-            pressed ? styles.buttonPressed : null,
-          ]}
-        >
-          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-            History
-          </Text>
-        </Pressable>
-      </View>
-      <View style={styles.header}>
-        <Text style={[textStyles.title, { color: textColor }]}>
-          Review Queue
-        </Text>
-        <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-          Enter organizer code to load flagged submissions.
-        </Text>
+    <SafeScreen>
+      <NavBar
+        title="Review queue"
+        rightSlot={
+          rows.length > 0 ? (
+            <AppChip tone="accent" solid>
+              {String(rows.length)}
+            </AppChip>
+          ) : undefined
+        }
+      />
+
+      <View style={[styles.segment, { backgroundColor: colors.surfaceSunken }]}>
+        <SegmentButton label="Create" onPress={goToCreate} />
+        <SegmentButton label="Review" active onPress={() => {}} />
+        <SegmentButton label="History" onPress={goToHistory} />
       </View>
 
       <View style={styles.codeRow}>
-        <TextInput
+        <AppInput
           value={organizerCode}
           onChangeText={setOrganizerCode}
           placeholder="Organizer code"
-          placeholderTextColor={border}
           autoCapitalize="none"
           autoCorrect={false}
           secureTextEntry
-          style={[
-            styles.codeInput,
-            { borderColor: border, color: colors.text },
-          ]}
+          containerStyle={styles.codeInput}
         />
-        <Pressable
+        <AppButton
+          tone="primary"
           onPress={loadQueue}
           disabled={!canLoad || isLoading}
-          style={({ pressed }) => [
-            styles.loadButton,
-            { backgroundColor: canLoad && !isLoading ? tint : border },
-            pressed && canLoad && !isLoading ? styles.buttonPressed : null,
-          ]}
+          loading={isLoading}
         >
-          <Text style={[textStyles.defaultSemiBold, styles.loadText]}>
-            {isLoading ? 'Loading…' : 'Load'}
-          </Text>
-        </Pressable>
+          Load
+        </AppButton>
       </View>
 
       {error ? (
-        <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
-          {error}
-        </Text>
+        <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft }]}>
+          <IconSymbol
+            name="exclamationmark.triangle.fill"
+            size={16}
+            color={colors.danger}
+          />
+          <AppText variant="caption" style={{ color: colors.onDangerSoft }}>
+            {error}
+          </AppText>
+        </View>
       ) : null}
 
       {isLoading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator color={tint} />
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Fetching review queue…
-          </Text>
-        </View>
-      ) : rows.length === 0 && canLoad ? (
-        <View style={styles.emptyBox}>
-          <Text style={[textStyles.subtitle, { color: textColor }]}>
-            Queue clear
-          </Text>
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            No flagged submissions right now.
-          </Text>
+        <View style={styles.skeletons}>
+          <SkeletonCard />
+          <SkeletonCard />
         </View>
       ) : (
         <FlatList
           data={rows}
           keyExtractor={(r) => r.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.list,
+            rows.length === 0 ? styles.listEmpty : null,
+          ]}
           refreshing={isLoading}
           onRefresh={loadQueue}
+          ListEmptyComponent={
+            canLoad ? (
+              <EmptyState
+                icon="checkmark.seal.fill"
+                title="Queue clear"
+                message="No flagged submissions right now. Pull to refresh when new ones land."
+                actionLabel="Refresh"
+                onAction={loadQueue}
+              />
+            ) : (
+              <EmptyState
+                icon="lock.fill"
+                title="Organizer code required"
+                message="Enter your organizer code above to load flagged submissions."
+              />
+            )
+          }
         />
       )}
     </SafeScreen>
   );
 }
 
+function SegmentButton({
+  label,
+  active = false,
+  onPress,
+}: {
+  label: string;
+  active?: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useAppTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={[
+        styles.segmentItem,
+        { backgroundColor: active ? colors.surface : 'transparent' },
+      ]}
+    >
+      <AppText variant="label" tone={active ? 'primary' : 'tertiary'}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  navRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 12 },
-  navPill: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  segment: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    padding: Spacing.xs,
+    borderRadius: Radius.pill,
+    marginBottom: Spacing.base,
   },
-  navActiveText: { color: 'white' },
-  header: { gap: 6, marginBottom: 12 },
-  hint: { opacity: 0.85 },
-  errorText: { marginTop: 8, opacity: 0.95 },
-  codeRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  segmentItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 1,
+    borderRadius: Radius.pill,
+  },
+  codeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
   codeInput: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
   },
-  loadButton: {
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+  errorBox: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radius.sm,
   },
-  loadText: { color: 'white' },
-  loadingBox: { marginTop: 18, gap: 10, alignItems: 'center' },
-  emptyBox: { marginTop: 18, gap: 6, alignItems: 'center' },
-  list: { paddingVertical: 12, gap: 12 },
-  card: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    gap: 10,
+  skeletons: {
+    gap: Spacing.md,
+    paddingTop: Spacing.base,
+  },
+  list: {
+    gap: Spacing.md,
+    paddingTop: Spacing.base,
+    paddingBottom: Spacing.xxl,
+  },
+  listEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
+    alignItems: 'flex-start',
+    gap: Spacing.md,
   },
-  meta: { opacity: 0.75 },
-  body: { opacity: 0.95, lineHeight: 20 },
-  row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  actions: {
+  identity: {
+    flex: 1,
+    gap: Spacing.xxs,
+  },
+  scoreBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 62,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm - 2,
+    borderRadius: Radius.sm,
+  },
+  scoreValue: {
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  chipRow: {
     flexDirection: 'row',
-    gap: 10,
     alignItems: 'center',
     flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
   },
-  button: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  photo: {
+    width: '100%',
+    height: 180,
+    borderRadius: Radius.md,
+    marginTop: Spacing.md,
   },
-  buttonPressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
-  overrideBox: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  input: {
-    minWidth: 120,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+  section: {
+    gap: Spacing.xs,
+    marginTop: Spacing.base,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: Spacing.base,
+  },
+  overrideRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  overrideInput: {
+    flex: 1,
   },
 });

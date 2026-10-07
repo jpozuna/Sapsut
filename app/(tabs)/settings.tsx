@@ -1,21 +1,26 @@
 import { useCallback, useMemo, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { SafeScreen, TAB_BAR_CLEARANCE } from '@/components/safe-screen';
 import { ScreenState } from '@/components/screen-state';
-import { SafeScreen } from '@/components/safe-screen';
-import { textStyles, useAppTheme } from '@/lib/ui';
+import {
+  AppButton,
+  AppCard,
+  AppChip,
+  AppInput,
+  AppText,
+  IconSymbol,
+  ScreenHeader,
+} from '@/components/ui';
+import type { IconSymbolName } from '@/components/ui/icon-symbol';
+import { Radius, Spacing } from '@/constants/theme';
 import { useRole } from '@/lib/role-context';
+import { useAppTheme } from '@/lib/ui';
 
 export default function SettingsScreen() {
-  const { textColor, backgroundColor, tint, border, colors } = useAppTheme();
+  const { colors } = useAppTheme();
 
   const { role, enterOrganizerMode, exitOrganizerMode } = useRole();
 
@@ -55,52 +60,147 @@ export default function SettingsScreen() {
     router.replace('/(tabs)');
   }, [exitOrganizerMode]);
 
+  const isOrganizer = role === 'organizer';
+  const modeIcon: IconSymbolName = isOrganizer ? 'lock.fill' : 'person.fill';
+
   return (
     <ScreenState isLoading={false}>
-      <SafeScreen backgroundColor={backgroundColor} style={styles.container}>
-        <View style={styles.header}>
-          <Text style={[textStyles.title, { color: textColor }]}>Settings</Text>
-          <Text
-            style={[textStyles.default, styles.subtitle, { color: textColor }]}
+      <SafeScreen>
+        <ScreenHeader
+          title="Settings"
+          subtitle={`You're browsing Sapsut as a ${modeLabel.toLowerCase()}.`}
+          rightSlot={
+            <AppChip tone={isOrganizer ? 'brick' : 'accent'} size="md">
+              {modeLabel}
+            </AppChip>
+          }
+        />
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <Animated.View
+            entering={FadeInDown.duration(280)}
+            style={styles.section}
           >
-            Current mode: {modeLabel}
-          </Text>
-        </View>
+            <AppText variant="overline" tone="tertiary">
+              Account
+            </AppText>
 
-        <View style={[styles.card, { borderColor: border }]}>
-          <Text style={[textStyles.subtitle, { color: textColor }]}>Role</Text>
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Switch between participant views and organizer tools.
-          </Text>
+            <AppCard>
+              <View style={styles.row}>
+                <View
+                  style={[
+                    styles.iconWrap,
+                    { backgroundColor: colors.accentSoft },
+                  ]}
+                >
+                  <IconSymbol name={modeIcon} size={17} color={colors.accent} />
+                </View>
 
-          {role === 'participant' ? (
-            <Pressable
-              onPress={openOrganizerPrompt}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                { borderColor: tint },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Switch to Organizer
-              </Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={onSwitchToParticipant}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                { borderColor: tint },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Switch to Participant
-              </Text>
-            </Pressable>
-          )}
-        </View>
+                <View style={styles.rowBody}>
+                  <AppText variant="title">Current mode</AppText>
+                  <AppText variant="caption" tone="secondary">
+                    {isOrganizer
+                      ? 'Organizer tools and review queues are unlocked.'
+                      : 'Standard hunt experience for your team.'}
+                  </AppText>
+                </View>
+
+                <AppChip tone={isOrganizer ? 'brick' : 'neutral'}>
+                  {modeLabel}
+                </AppChip>
+              </View>
+            </AppCard>
+          </Animated.View>
+
+          <Animated.View
+            entering={FadeInDown.delay(45).duration(280)}
+            style={styles.section}
+          >
+            <AppText variant="overline" tone="tertiary">
+              Role
+            </AppText>
+
+            <AppCard>
+              <AppText variant="title">
+                {isOrganizer ? 'Leave organizer mode' : 'Organizer access'}
+              </AppText>
+              <AppText
+                variant="callout"
+                tone="secondary"
+                style={styles.cardHint}
+              >
+                Switch between participant views and organizer tools.
+              </AppText>
+
+              <View style={styles.cardAction}>
+                {isOrganizer ? (
+                  <AppButton
+                    tone="secondary"
+                    size="sm"
+                    onPress={onSwitchToParticipant}
+                    icon={
+                      <IconSymbol
+                        name="person.fill"
+                        size={14}
+                        color={colors.textPrimary}
+                      />
+                    }
+                  >
+                    Switch to Participant
+                  </AppButton>
+                ) : (
+                  <AppButton
+                    tone="primary"
+                    size="sm"
+                    onPress={openOrganizerPrompt}
+                    icon={
+                      <IconSymbol
+                        name="lock.fill"
+                        size={14}
+                        color={colors.onAccent}
+                      />
+                    }
+                  >
+                    Switch to Organizer
+                  </AppButton>
+                )}
+              </View>
+            </AppCard>
+          </Animated.View>
+
+          <Animated.View
+            entering={FadeInDown.delay(90).duration(280)}
+            style={styles.section}
+          >
+            <AppText variant="overline" tone="tertiary">
+              About
+            </AppText>
+
+            <AppCard variant="sunken">
+              <View style={styles.row}>
+                <View
+                  style={[styles.iconWrap, { backgroundColor: colors.surface }]}
+                >
+                  <IconSymbol
+                    name="info.circle.fill"
+                    size={17}
+                    color={colors.textTertiary}
+                  />
+                </View>
+                <View style={styles.rowBody}>
+                  <AppText variant="bodyStrong">Husky Hunt companion</AppText>
+                  <AppText variant="caption" tone="secondary">
+                    Submit answers, track scoring, and follow the leaderboard
+                    through the 24-hour hunt.
+                  </AppText>
+                </View>
+              </View>
+            </AppCard>
+          </Animated.View>
+        </ScrollView>
 
         <Modal
           visible={isModalOpen}
@@ -108,82 +208,59 @@ export default function SettingsScreen() {
           animationType="fade"
           onRequestClose={onCancelOrganizer}
         >
-          <View style={styles.modalBackdrop}>
-            <View
-              style={[
-                styles.modalCard,
-                { borderColor: border, backgroundColor },
-              ]}
-            >
-              <Text style={[textStyles.subtitle, { color: textColor }]}>
-                Enter organizer code
-              </Text>
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                This stays in memory for this session only.
-              </Text>
+          <View
+            style={[styles.modalBackdrop, { backgroundColor: colors.scrim }]}
+          >
+            <AppCard style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <View
+                  style={[
+                    styles.iconWrap,
+                    { backgroundColor: colors.accentSoft },
+                  ]}
+                >
+                  <IconSymbol
+                    name="lock.fill"
+                    size={17}
+                    color={colors.accent}
+                  />
+                </View>
+                <View style={styles.rowBody}>
+                  <AppText variant="title">Enter organizer code</AppText>
+                  <AppText variant="caption" tone="secondary">
+                    This stays in memory for this session only.
+                  </AppText>
+                </View>
+              </View>
 
-              <TextInput
+              <AppInput
+                label="Organizer code"
                 value={codeDraft}
                 onChangeText={(t) => {
                   setCodeDraft(t);
                   if (error) setError(null);
                 }}
                 placeholder="Organizer code"
-                placeholderTextColor={border}
                 autoCapitalize="none"
                 autoCorrect={false}
                 secureTextEntry
-                style={[
-                  styles.input,
-                  { borderColor: border, color: colors.text },
-                ]}
+                error={error ?? undefined}
+                containerStyle={styles.modalInput}
               />
 
-              {error ? (
-                <Text
-                  style={[
-                    textStyles.default,
-                    styles.errorText,
-                    { color: tint },
-                  ]}
-                >
-                  {error}
-                </Text>
-              ) : null}
-
               <View style={styles.modalActions}>
-                <Pressable
-                  onPress={onCancelOrganizer}
-                  style={({ pressed }) => [
-                    styles.secondaryButton,
-                    { borderColor: border },
-                    pressed ? styles.pressed : null,
-                  ]}
-                >
-                  <Text
-                    style={[textStyles.defaultSemiBold, { color: textColor }]}
-                  >
-                    Cancel
-                  </Text>
-                </Pressable>
-                <Pressable
+                <AppButton tone="ghost" size="sm" onPress={onCancelOrganizer}>
+                  Cancel
+                </AppButton>
+                <AppButton
+                  tone="primary"
+                  size="sm"
                   onPress={onConfirmOrganizer}
-                  style={({ pressed }) => [
-                    styles.primaryButtonFilled,
-                    { backgroundColor: tint },
-                    pressed ? styles.pressed : null,
-                  ]}
                 >
-                  <Text
-                    style={[textStyles.defaultSemiBold, { color: 'white' }]}
-                  >
-                    Continue
-                  </Text>
-                </Pressable>
+                  Continue
+                </AppButton>
               </View>
-            </View>
+            </AppCard>
           </View>
         </Modal>
       </SafeScreen>
@@ -192,52 +269,56 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 16 },
-  header: { gap: 6 },
-  subtitle: { opacity: 0.85 },
-  card: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
-  hint: { opacity: 0.85, lineHeight: 20 },
-  primaryButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  scrollContent: {
+    gap: Spacing.xl,
+    paddingBottom: TAB_BAR_CLEARANCE,
+  },
+  section: {
+    gap: Spacing.sm,
+  },
+  row: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.md,
+  },
+  rowBody: {
+    flex: 1,
+    gap: Spacing.xxs,
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardHint: {
+    marginTop: Spacing.xs,
+  },
+  cardAction: {
+    marginTop: Spacing.base,
     alignSelf: 'flex-start',
   },
-  primaryButtonFilled: {
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  secondaryButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  pressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    padding: 16,
+    padding: Spacing.lg,
   },
-  modalCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+  modalCard: {
+    gap: Spacing.base,
   },
-  errorText: { opacity: 0.95 },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  modalInput: {
+    marginTop: Spacing.xxs,
+  },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 4,
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
 });

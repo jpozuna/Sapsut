@@ -1,0 +1,7 @@
+# Pin the rule set explicitly. Ruff's built-in defaults widened in 0.16, so
+# relying on them makes lint results depend on whichever version CI happens to
+# install. These are the rules the backend was already being checked against.
+line-length = 100
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

@@ -1,8 +1,11 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
+import { StyleSheet, View } from 'react-native';
 
+import { AppButton, AppText, IconSymbol } from '@/components/ui';
+import type { IconSymbolName } from '@/components/ui/icon-symbol';
+import { Radius, Spacing } from '@/constants/theme';
 import type { AppError } from '@/lib/app-error';
-import { textStyles, useAppTheme } from '@/lib/ui';
+import { useAppTheme } from '@/lib/ui';
 
 export type AppErrorStateProps = {
   error: AppError;
@@ -11,23 +14,30 @@ export type AppErrorStateProps = {
   titleOverride?: string;
 };
 
-function getDefaultCopy(error: AppError): { title: string; message: string } {
+function getDefaultCopy(error: AppError): {
+  title: string;
+  message: string;
+  icon: IconSymbolName;
+} {
   switch (error.kind) {
     case 'network':
       return {
         title: 'No connection',
         message:
           'Looks like you’re offline. Check your connection and try again.',
+        icon: 'wifi.slash',
       };
     case 'server':
       return {
         title: 'Server error',
         message: 'Our servers are having a moment. Please try again.',
+        icon: 'exclamationmark.triangle.fill',
       };
     default:
       return {
         title: 'Something went wrong',
         message: 'Try again, or head back and try a different path.',
+        icon: 'exclamationmark.triangle.fill',
       };
   }
 }
@@ -38,7 +48,7 @@ export function AppErrorState({
   onGoBack,
   titleOverride,
 }: AppErrorStateProps) {
-  const { textColor, backgroundColor, tint } = useAppTheme();
+  const { colors } = useAppTheme();
 
   const copy = getDefaultCopy(error);
   const title = titleOverride ?? copy.title;
@@ -49,54 +59,36 @@ export function AppErrorState({
     onGoBack ?? (canGoBack ? () => router.back() : undefined);
   const primaryAction =
     onRetry ?? handleGoBack ?? (() => router.replace('/(tabs)'));
-
-  const primaryLabel = onRetry ? 'Retry' : handleGoBack ? 'Go back' : 'Go home';
+  const primaryLabel = onRetry
+    ? 'Try again'
+    : handleGoBack
+      ? 'Go back'
+      : 'Go home';
 
   return (
-    <View style={[styles.container, { backgroundColor }]}>
+    <View style={[styles.container, { backgroundColor: colors.canvas }]}>
       <View style={styles.content}>
-        <Text style={[textStyles.title, styles.title, { color: textColor }]}>
-          {title}
-        </Text>
-        <Text
-          style={[textStyles.default, styles.message, { color: textColor }]}
-        >
-          {message}
-        </Text>
+        <View style={[styles.iconWrap, { backgroundColor: colors.dangerSoft }]}>
+          <IconSymbol name={copy.icon} size={28} color={colors.danger} />
+        </View>
+
+        <View style={styles.copy}>
+          <AppText variant="heading" align="center">
+            {title}
+          </AppText>
+          <AppText variant="body" tone="secondary" align="center">
+            {message}
+          </AppText>
+        </View>
 
         <View style={styles.actions}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={primaryAction}
-            style={[styles.primaryButton, { borderColor: tint }]}
-          >
-            <Text
-              style={[
-                textStyles.defaultSemiBold,
-                styles.primaryText,
-                { color: tint },
-              ]}
-            >
-              {primaryLabel}
-            </Text>
-          </TouchableOpacity>
-
+          <AppButton tone="primary" fullWidth onPress={primaryAction}>
+            {primaryLabel}
+          </AppButton>
           {onRetry && handleGoBack ? (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={handleGoBack}
-              style={styles.secondaryButton}
-            >
-              <Text
-                style={[
-                  textStyles.default,
-                  styles.secondaryText,
-                  { color: textColor },
-                ]}
-              >
-                Go back
-              </Text>
-            </TouchableOpacity>
+            <AppButton tone="ghost" fullWidth onPress={handleGoBack}>
+              Go back
+            </AppButton>
           ) : null}
         </View>
       </View>
@@ -109,42 +101,28 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: Spacing.xl,
   },
   content: {
     width: '100%',
-    maxWidth: 520,
-    gap: 12,
+    maxWidth: 420,
     alignItems: 'center',
+    gap: Spacing.lg,
   },
-  title: {
-    textAlign: 'center',
+  iconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  message: {
-    textAlign: 'center',
-    opacity: 0.9,
+  copy: {
+    gap: Spacing.sm,
+    alignItems: 'center',
   },
   actions: {
-    marginTop: 8,
-    gap: 10,
     width: '100%',
-  },
-  primaryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  primaryText: {
-    fontSize: 16,
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  secondaryText: {
-    opacity: 0.85,
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
   },
 });

@@ -8,17 +8,18 @@ export type ScreenStateProps = PropsWithChildren<{
   isLoading: boolean;
   error?: unknown;
   onRetry?: () => void;
-  loadingLabel?: string;
+  /** Placeholder cards to show while loading. */
+  loadingRows?: number;
 }>;
 
 export function ScreenState({
   isLoading,
   error,
   onRetry,
-  loadingLabel,
+  loadingRows,
   children,
 }: ScreenStateProps) {
-  if (isLoading) return <AppLoading label={loadingLabel} />;
+  if (isLoading) return <AppLoading rows={loadingRows} />;
   if (error)
     return <AppErrorState error={toAppError(error)} onRetry={onRetry} />;
   return children;

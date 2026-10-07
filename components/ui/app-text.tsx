@@ -1,26 +1,53 @@
 import { PropsWithChildren } from 'react';
-import { StyleProp, TextStyle } from 'react-native';
-import { Text } from 'react-native-paper';
+import { StyleProp, Text, TextStyle } from 'react-native';
 
-export type AppTextVariant = 'title' | 'subtitle' | 'body' | 'label';
+import { Typography, TypographyVariant } from '@/constants/theme';
+import { useAppTheme } from '@/lib/ui';
+
+export type AppTextTone =
+  | 'primary'
+  | 'secondary'
+  | 'tertiary'
+  | 'accent'
+  | 'inverse'
+  | 'success'
+  | 'warning'
+  | 'danger';
 
 type AppTextProps = PropsWithChildren<{
-  variant?: AppTextVariant;
+  variant?: TypographyVariant;
+  tone?: AppTextTone;
+  align?: TextStyle['textAlign'];
+  numberOfLines?: number;
   style?: StyleProp<TextStyle>;
 }>;
 
-export function AppText({ variant = 'body', style, children }: AppTextProps) {
-  const paperVariant =
-    variant === 'title'
-      ? 'headlineMedium'
-      : variant === 'subtitle'
-        ? 'titleLarge'
-        : variant === 'label'
-          ? 'labelLarge'
-          : 'bodyLarge';
+export function AppText({
+  variant = 'body',
+  tone = 'primary',
+  align,
+  numberOfLines,
+  style,
+  children,
+}: AppTextProps) {
+  const { colors } = useAppTheme();
+
+  const color = {
+    primary: colors.textPrimary,
+    secondary: colors.textSecondary,
+    tertiary: colors.textTertiary,
+    accent: colors.accent,
+    inverse: colors.textInverse,
+    success: colors.success,
+    warning: colors.warning,
+    danger: colors.danger,
+  }[tone];
 
   return (
-    <Text variant={paperVariant} style={style}>
+    <Text
+      numberOfLines={numberOfLines}
+      style={[Typography[variant], { color, textAlign: align }, style]}
+    >
       {children}
     </Text>
   );
