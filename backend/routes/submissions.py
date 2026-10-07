@@ -38,14 +38,53 @@ def _extract_signed_url(resp: Any) -> Optional[str]:
     return None
 
 
+# Participant-visible columns. Everything else on the row (ai_result, confidence,
+# gpt4o_description, raw photo_url) stays server-side: it can include the expected
+# answer or scoring criteria. Organizer routes return the full row separately.
+_PARTICIPANT_FIELDS = (
+    "id",
+    "task_id",
+    "team_id",
+    "text_answer",
+    "status",
+    "score",
+    "rationale",
+    "created_at",
+)
+_PARTICIPANT_COLUMNS = ",".join(_PARTICIPANT_FIELDS)
+
+# `rationale` is free model text produced from a prompt that contains every
+# criterion for the task, so it can quote the expected answer. Participants get a
+# fixed message per status instead; the stored rationale is untouched.
+_PARTICIPANT_RATIONALE = {
+    "approved": "Your submission was approved.",
+    "auto_approved": "Your submission was approved.",
+    "reviewed": "An organizer reviewed your submission.",
+    "flagged": "Your submission is awaiting organizer review.",
+    "error": "Please try again.",
+}
+
+
+# Scores are shown only once final. A flagged score is an unreviewed model score,
+# and showing it would let a team probe the rubric by resubmitting variants.
+_PARTICIPANT_SCORED_STATUSES = {"approved", "auto_approved", "reviewed"}
+
+
+def _participant_view(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = {k: row.get(k) for k in _PARTICIPANT_FIELDS}
+    status = str(row.get("status") or "").strip().lower()
+    out["rationale"] = _PARTICIPANT_RATIONALE.get(status)
+    if status not in _PARTICIPANT_SCORED_STATUSES:
+        out["score"] = None
+    return out
+
+
 @router.get("/{id}")
 async def get_submission(id: str) -> Dict[str, Any]:
     supabase = get_supabase()
     rows = (
         supabase.table("submissions")
-        .select(
-            "id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,ai_result,created_at"
-        )
+        .select(f"{_PARTICIPANT_COLUMNS},photo_url")
         .eq("id", id)
         .limit(1)
         .execute()
@@ -53,9 +92,10 @@ async def get_submission(id: str) -> Dict[str, Any]:
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Submission not found")
-    submission: Dict[str, Any] = rows[0]
+    row: Dict[str, Any] = rows[0]
+    submission = _participant_view(row)
 
-    photo_path = submission.get("photo_url")
+    photo_path = row.get("photo_url")
     if photo_path:
         try:
             signed = await anyio.to_thread.run_sync(
@@ -78,15 +118,13 @@ def list_submissions(
     supabase = get_supabase()
     q = (
         supabase.table("submissions")
-        .select(
-            "id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,ai_result,created_at"
-        )
+        .select(_PARTICIPANT_COLUMNS)
         .eq("team_id", team_id)
         .order("created_at", desc=True)
     )
     if task_id:
         q = q.eq("task_id", task_id)
-    return q.execute().data or []
+    return [_participant_view(r) for r in (q.execute().data or [])]
 
 
 @router.post("/")

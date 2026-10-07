@@ -10,7 +10,8 @@
 | T-05 | Merge the two organizer route trees        | done        | inline | none       | 2              |
 | T-06 | Sanitize scoring errors; CORS parse fixes  | done        | inline | T-03       | 2              |
 | T-07 | Validate photo uploads before storing      | done        | inline | T-01, T-02 | 3              |
-| T-08 | Return only participant-safe submissions   | todo        | inline | T-07       | 4              |
+| T-08 | Return only participant-safe submissions   | done        | inline | T-07       | 4              |
+| T-09 | Hide task rubric from `GET /tasks/`        | in-progress | inline | T-08       | 5              |
 | M-01 | Push T-01 migration to live DB (manager)   | todo        | inline | T-01       | after T-01     |
 
 Concurrency cap: 3
@@ -21,6 +22,11 @@ on `GET /teams/{id}`). The manager opens a separate GitHub issue for it at close
 Follow-ups (to file as issues at close-out):
 
 - Item 6 team isolation, plus client `photo_path` and the invite code returned by `GET /teams/{id}`.
+  Higher priority than it looked: `POST /submissions/` stores a client
+  `photo_path` verbatim and `GET /submissions/{id}` signs it, so anyone who knows
+  an object path (other teams' photos, organizer `tasks/...` reference photos)
+  gets a 10-minute URL to it. Validate the `{team_id}/{task_id}/` prefix or drop
+  the field.
 - Organizer review screen uses the raw storage path as the image URI; needs
   `photo_signed_url` from `GET /organizer/review-queue`.
 - Delete dead `lib/supabase.ts` and remove `@supabase/supabase-js` and the
@@ -38,6 +44,12 @@ Follow-ups (to file as issues at close-out):
   (never `--forwarded-allow-ips="*"`).
 - Organizer token revocation or logout (today only rotating the code works).
 - Validate `queue_id`/`submission_id` as UUIDs (400 instead of 500).
+- Enforce `is_active`/`opens_at`/`closes_at` server-side on `GET /tasks/` and
+  `POST /submissions/` (today only the client filters).
+- UI: relabel the "AI rationale" card on `app/submissions/[id].tsx` (now a fixed
+  status message), drop the dead confidence block, and decide how organizer
+  override feedback reaches participants. Organizers should keep hints out of
+  task `description` (public and sent to the model).
 - `services/scoring.py` `_mime_type_from_path` uses `mimetypes`, which on
   Python 3.9 labels `.heic`/`.heif` photos as JPEG for the vision model.
 - The one-submission-per-team-task check is not atomic and no unique
@@ -45,6 +57,11 @@ Follow-ups (to file as issues at close-out):
   pass. Needs a partial unique index excluding `status = 'error'`.
 
 Decisions log:
+
+- 2026-10-07: T-08: participants see only allowlisted submission fields, a fixed
+  rationale per status, and `score` only once final (`approved`,
+  `auto_approved`, `reviewed`). T-09 added from the T-08 audit: `GET /tasks/`
+  returns `rubric` via `select("*")`.
 
 - 2026-10-07: T-07: any `status = 'error'` submission (failed upload or failed
   scoring) no longer blocks a resubmit (issue #41). Uploads are validated to

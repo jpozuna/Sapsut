@@ -231,7 +231,7 @@ def test_get_submission_by_id_includes_signed_url_when_photo_exists(app_and_clie
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == "sub1"
-    assert data["photo_url"] == f"{team_id}/{task_id}/sub1.png"
+    assert "photo_url" not in data
     assert data["photo_signed_url"].startswith("https://signed.example/")
     assert fake.sign_calls == [(f"{team_id}/{task_id}/sub1.png", 600)]
 
@@ -280,6 +280,113 @@ def test_list_submissions_omits_signed_urls(app_and_client):
     assert [r["id"] for r in rows] == ["sub2", "sub1"]
     assert all("photo_signed_url" not in r for r in rows)
 
+
+_REMOVED_FIELDS = ("ai_result", "confidence", "gpt4o_description", "photo_url")
+_ALLOWED_DETAIL = {
+    "id",
+    "task_id",
+    "team_id",
+    "text_answer",
+    "status",
+    "score",
+    "rationale",
+    "created_at",
+    "photo_signed_url",
+}
+_SECRET = "Hunter2-Expected-Answer"
+
+
+def _secret_row(sub_id, status, rationale):
+    task_id = "11111111-1111-1111-1111-111111111111"
+    team_id = "22222222-2222-2222-2222-222222222222"
+    return {
+        "id": sub_id,
+        "task_id": task_id,
+        "team_id": team_id,
+        "text_answer": "my guess",
+        "photo_url": f"{team_id}/{task_id}/{sub_id}.png",
+        "status": status,
+        "score": 5,
+        "confidence": 0.99,
+        "rationale": rationale,
+        "gpt4o_description": f"a sign reading {_SECRET}",
+        "ai_result": {"mode": "exact_match", "criteria": _SECRET},
+        "created_at": "2026-01-01T00:00:00Z",
+    }
+
+
+def test_get_submission_hides_scoring_internals(app_and_client):
+    fake, client = app_and_client
+    fake.db["submissions"].append(
+        _secret_row("sub1", "flagged", f"Answer should be {_SECRET}")
+    )
+
+    resp = client.get("/submissions/sub1")
+    assert resp.status_code == 200
+    data = resp.json()
+    for field in _REMOVED_FIELDS:
+        assert field not in data
+    assert set(data) <= _ALLOWED_DETAIL
+    assert data["photo_signed_url"].startswith("https://signed.example/")
+    assert _SECRET not in resp.text
+    assert data["rationale"] == "Your submission is awaiting organizer review."
+
+
+def test_list_submissions_hides_scoring_internals(app_and_client):
+    fake, client = app_and_client
+    team_id = "22222222-2222-2222-2222-222222222222"
+    fake.db["submissions"].append(
+        _secret_row("sub1", "approved", f"Matches {_SECRET}")
+    )
+
+    resp = client.get(f"/submissions/?team_id={team_id}")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    for field in _REMOVED_FIELDS:
+        assert field not in rows[0]
+    assert set(rows[0]) <= _ALLOWED_DETAIL - {"photo_signed_url"}
+    assert _SECRET not in resp.text
+    assert rows[0]["score"] == 5
+    assert rows[0]["rationale"] == "Your submission was approved."
+
+
+@pytest.mark.parametrize("status", ["approved", "auto_approved", "reviewed", "flagged", "error"])
+def test_participant_rationale_is_fixed_per_status(app_and_client, status):
+    fake, client = app_and_client
+    fake.db["submissions"].append(_secret_row("sub1", status, f"leak {_SECRET}"))
+
+    data = client.get("/submissions/sub1").json()
+    assert _SECRET not in data["rationale"]
+    assert data["rationale"]
+
+
+def test_pending_submission_has_no_rationale(app_and_client):
+    fake, client = app_and_client
+    fake.db["submissions"].append(_secret_row("sub1", "pending", f"leak {_SECRET}"))
+
+    data = client.get("/submissions/sub1").json()
+    assert data["rationale"] is None
+    assert _SECRET not in str(data)
+
+
+@pytest.mark.parametrize("status", ["approved", "auto_approved", "reviewed"])
+def test_final_status_shows_score(app_and_client, status):
+    fake, client = app_and_client
+    fake.db["submissions"].append(_secret_row("sub1", status, "r"))
+
+    assert client.get("/submissions/sub1").json()["score"] is not None
+
+
+@pytest.mark.parametrize("status", ["pending", "flagged", "error"])
+def test_unreviewed_status_hides_score(app_and_client, status):
+    fake, client = app_and_client
+    fake.db["submissions"].append(_secret_row("sub1", status, "r"))
+    team_id = fake.db["submissions"][0]["team_id"]
+
+    assert client.get("/submissions/sub1").json()["score"] is None
+    rows = client.get(f"/submissions/?team_id={team_id}").json()
+    assert rows[0]["score"] is None
 
 
 def test_post_submission_insert_failure_returns_generic_detail(app_and_client, monkeypatch):
