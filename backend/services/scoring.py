@@ -14,6 +14,7 @@ import anthropic
 import openai
 
 from services import get_supabase
+from services.photo_paths import server_photo_path
 from services.storage import storage_bucket
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,8 @@ async def score_submission(
     photo_path: Optional[str],
     force: bool = False,
 ):
+    """Score a submission. Callers pass `task_id`, `team_id` and `photo_path` from the
+    same submission row (or server-built values); the photo check relies on that."""
     try:
         supabase = get_supabase()
 
@@ -168,6 +171,14 @@ async def score_submission(
         # Fetch task details
         task = supabase.table("tasks").select("*").eq("id", task_id).single().execute().data
         max_points = int(task.get("max_points", 0) or 0)
+
+        # Only download server-generated paths for this submission's own team and
+        # task. Anything else is scored as if the submission had no photo.
+        if photo_path and server_photo_path(photo_path, team_id, task_id) is None:
+            logger.warning(
+                "Ignoring photo path that is not server-generated for submission %s", submission_id
+            )
+            photo_path = None
 
         # Get GPT-4o description if photo submission
         gpt4o_description = None

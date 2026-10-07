@@ -18,6 +18,7 @@ from auth.organizer import (
     require_organizer,
 )
 from services import get_supabase
+from services.photo_paths import server_photo_path
 from services.scoring import _get_openai_client, score_submission, _finalize_score
 from services.storage import storage_bucket
 from services.uploads import read_validated_image
@@ -52,11 +53,33 @@ def organizer_session(request: Request) -> Dict[str, Any]:
     }
 
 
+def _safe_submission(submission: Any) -> Any:
+    """A copy of a submission row whose `photo_url` is null unless server-generated."""
+    if not isinstance(submission, dict):
+        # PostgREST returns a dict (or null) for this join; drop anything else.
+        return None
+    safe = dict(submission)
+    safe["photo_url"] = server_photo_path(
+        safe.get("photo_url"), safe.get("team_id"), safe.get("task_id")
+    )
+    return safe
+
+
+def _with_safe_submissions(rows: Any) -> Any:
+    """Apply `_safe_submission` to the joined `submission` of each review row."""
+    out: List[Any] = []
+    for row in rows or []:
+        if isinstance(row, dict) and "submission" in row:
+            row = {**row, "submission": _safe_submission(row["submission"])}
+        out.append(row)
+    return out
+
+
 @router.get("/review-queue")
 def list_review_queue() -> Any:
     supabase = get_supabase()
     # Join submissions so organizer UI can display submission content per row.
-    return (
+    rows = (
         supabase.table("review_queue")
         .select(
             "id,submission_id,claude_score,claude_rationale,confidence,created_at,"
@@ -67,6 +90,7 @@ def list_review_queue() -> Any:
         .data
         or []
     )
+    return _with_safe_submissions(rows)
 
 
 def _try_insert_review_history(
@@ -445,7 +469,7 @@ def list_review_history(limit: int = 100) -> Any:
         )
         # If the table exists and has rows, return it.
         if rows:
-            return rows
+            return _with_safe_submissions(rows)
     except Exception:
         rows = []
 
@@ -498,7 +522,9 @@ def list_review_history(limit: int = 100) -> Any:
                     "task_id": s.get("task_id"),
                     "team_id": s.get("team_id"),
                     "text_answer": s.get("text_answer"),
-                    "photo_url": s.get("photo_url"),
+                    "photo_url": server_photo_path(
+                        s.get("photo_url"), s.get("team_id"), s.get("task_id")
+                    ),
                     "status": s.get("status"),
                     "score": s.get("score"),
                     "confidence": s.get("confidence"),

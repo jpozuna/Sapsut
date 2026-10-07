@@ -35,6 +35,9 @@ class _Query:
     def insert(self, _row):
         return self
 
+    def limit(self, _n):
+        return self
+
     def maybe_single(self):
         self._single = True
         return self
@@ -156,6 +159,149 @@ def test_public_task_creation_route_removed(monkeypatch, app_client):
         headers={"X-Organizer-Code": "secret"},
     )
     assert resp.status_code == 405
+
+
+# --- Review responses only expose server-generated photo paths ------------
+
+_TEAM = "22222222-2222-2222-2222-222222222222"
+_TASK = "44444444-4444-4444-4444-444444444444"
+_OTHER = "33333333-3333-3333-3333-333333333333"
+_FILE = "55555555-5555-4555-8555-555555555555.png"
+_OWN_PATH = f"{_TEAM}/{_TASK}/{_FILE}"
+_FOREIGN_PATH = f"{_OTHER}/{_TASK}/{_FILE}"
+_ORGANIZER = {"X-Organizer-Code": "secret"}
+
+
+def _submission(photo_url, sub_id="sub1"):
+    return {
+        "id": sub_id,
+        "task_id": _TASK,
+        "team_id": _TEAM,
+        "text_answer": "hi",
+        "photo_url": photo_url,
+        "status": "flagged",
+        "score": 1,
+        "confidence": 0.5,
+        "rationale": "r",
+        "gpt4o_description": None,
+        "ai_result": {"mode": "auto_approve"},
+        "created_at": "2026-01-01T00:00:00Z",
+    }
+
+
+def test_review_queue_nulls_foreign_photo_path(monkeypatch, app_client):
+    monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
+    app_client.fake.db["review_queue"] = [
+        {"id": "rq1", "submission_id": "sub1", "created_at": "2026-01-02T00:00:00Z",
+         "submission": _submission(_FOREIGN_PATH)},
+        {"id": "rq2", "submission_id": "sub2", "created_at": "2026-01-01T00:00:00Z",
+         "submission": _submission(_OWN_PATH, "sub2")},
+        {"id": "rq3", "submission_id": "sub3", "created_at": "2025-12-31T00:00:00Z",
+         "submission": None},
+    ]
+
+    resp = app_client.get("/organizer/review-queue", headers=_ORGANIZER)
+    assert resp.status_code == 200
+    rows = {r["id"]: r for r in resp.json()}
+    assert rows["rq1"]["submission"]["photo_url"] is None
+    assert rows["rq1"]["submission"]["text_answer"] == "hi"  # shape unchanged
+    assert rows["rq2"]["submission"]["photo_url"] == _OWN_PATH
+    assert rows["rq3"]["submission"] is None
+    assert _FOREIGN_PATH not in resp.text
+
+
+def test_review_history_nulls_foreign_photo_path(monkeypatch, app_client):
+    monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
+    app_client.fake.db["review_queue_history"] = [
+        {"id": "h1", "submission_id": "sub1", "created_at": "2026-01-02T00:00:00Z",
+         "submission": _submission(_FOREIGN_PATH)},
+        {"id": "h2", "submission_id": "sub2", "created_at": "2026-01-01T00:00:00Z",
+         "submission": _submission(_OWN_PATH, "sub2")},
+    ]
+
+    resp = app_client.get("/organizer/review-history", headers=_ORGANIZER)
+    assert resp.status_code == 200
+    rows = {r["id"]: r for r in resp.json()}
+    assert rows["h1"]["submission"]["photo_url"] is None
+    assert rows["h2"]["submission"]["photo_url"] == _OWN_PATH
+    assert _FOREIGN_PATH not in resp.text
+
+
+def test_review_history_fallback_nulls_foreign_photo_path(monkeypatch, app_client):
+    monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
+    app_client.fake.db["review_queue_history"] = []
+    app_client.fake.db["submissions"] = [
+        _submission(_FOREIGN_PATH, "sub1"),
+        _submission(_OWN_PATH, "sub2"),
+    ]
+
+    resp = app_client.get("/organizer/review-history", headers=_ORGANIZER)
+    assert resp.status_code == 200
+    rows = {r["submission_id"]: r for r in resp.json()}
+    assert rows["sub1"]["submission"]["photo_url"] is None
+    assert rows["sub2"]["submission"]["photo_url"] == _OWN_PATH
+    assert _FOREIGN_PATH not in resp.text
+
+
+def test_review_history_table_branch_tolerates_odd_submissions(monkeypatch, app_client):
+    monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
+    app_client.fake.db["review_queue_history"] = [
+        {"id": "h1", "submission_id": "sub1", "created_at": "2026-01-05T00:00:00Z", "submission": None},
+        {"id": "h2", "submission_id": "sub2", "created_at": "2026-01-04T00:00:00Z", "submission": "oops"},
+        {"id": "h3", "submission_id": "sub3", "created_at": "2026-01-03T00:00:00Z"},
+        {"id": "h4", "submission_id": "sub4", "created_at": "2026-01-02T00:00:00Z",
+         "submission": _submission(_FOREIGN_PATH, "sub4")},
+    ]
+
+    resp = app_client.get("/organizer/review-history", headers=_ORGANIZER)
+    assert resp.status_code == 200
+    rows = {r["id"]: r for r in resp.json()}
+    assert rows["h1"]["submission"] is None
+    assert rows["h2"]["submission"] is None  # a non-dict join value is dropped, never passed through
+    assert "submission" not in rows["h3"]  # shape unchanged: no key is added
+    assert rows["h4"]["submission"]["photo_url"] is None
+    assert _FOREIGN_PATH not in resp.text
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"team_id": None},
+        {"task_id": None},
+        {"team_id": "team1"},  # not a UUID
+        {"photo_url": None},
+        {"photo_url": ""},
+        {"photo_url": 123},
+        {"photo_url": f"{_TEAM}/{_TASK}/../{_FILE}"},
+        {"photo_url": f"{_TEAM}/{_TASK}/{_FILE.upper()}"},
+    ],
+)
+def test_review_responses_null_photo_url_for_unusable_rows(monkeypatch, app_client, overrides):
+    monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
+    sub = {**_submission(_OWN_PATH), **overrides}
+    app_client.fake.db["review_queue"] = [
+        {"id": "rq1", "submission_id": "sub1", "created_at": "2026-01-01T00:00:00Z", "submission": sub}
+    ]
+    app_client.fake.db["review_queue_history"] = [
+        {"id": "h1", "submission_id": "sub1", "created_at": "2026-01-01T00:00:00Z", "submission": sub}
+    ]
+
+    queue = app_client.get("/organizer/review-queue", headers=_ORGANIZER).json()
+    history = app_client.get("/organizer/review-history", headers=_ORGANIZER).json()
+    assert queue[0]["submission"]["photo_url"] is None
+    assert history[0]["submission"]["photo_url"] is None
+    # The rest of the row is passed through untouched.
+    assert queue[0]["submission"]["team_id"] == sub["team_id"]
+
+
+def test_review_responses_do_not_mutate_stored_rows(monkeypatch, app_client):
+    monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
+    stored = _submission(_FOREIGN_PATH)
+    app_client.fake.db["review_queue"] = [
+        {"id": "rq1", "submission_id": "sub1", "created_at": "2026-01-01T00:00:00Z", "submission": stored}
+    ]
+    assert app_client.get("/organizer/review-queue", headers=_ORGANIZER).status_code == 200
+    assert stored["photo_url"] == _FOREIGN_PATH
 
 
 # --- Override score cap ----------------------------------------------------
