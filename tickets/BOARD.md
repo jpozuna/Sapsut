@@ -4,12 +4,12 @@
 | ---- | ------------------------------------------ | ----------- | ------ | ---------- | -------------- |
 | M-00 | Install expo-secure-store (manager)        | done        | inline | none       | 1              |
 | T-01 | Enable RLS and lock down Storage           | done        | inline | none       | 1              |
-| T-02 | Harden organizer auth on the backend       | in-progress | inline | none       | 1              |
+| T-02 | Harden organizer auth on the backend       | done        | inline | none       | 1              |
 | T-03 | Sanitize error responses and restrict CORS | done        | inline | none       | 1              |
-| T-04 | Secure, verified organizer session in app  | todo        | inline | M-00, T-02 | 2              |
+| T-04 | Secure, verified organizer session in app  | in-progress | inline | M-00, T-02 | 2              |
 | T-05 | Merge the two organizer route trees        | done        | inline | none       | 2              |
 | T-06 | Sanitize scoring errors; CORS parse fixes  | done        | inline | T-03       | 2              |
-| T-07 | Validate photo uploads before storing      | todo        | inline | T-01, T-02 | 3              |
+| T-07 | Validate photo uploads before storing      | in-progress | inline | T-01, T-02 | 3              |
 | T-08 | Return only participant-safe submissions   | todo        | inline | T-07       | 4              |
 | M-01 | Push T-01 migration to live DB (manager)   | todo        | inline | T-01       | after T-01     |
 
@@ -31,8 +31,20 @@ Follow-ups (to file as issues at close-out):
 - Disable `/docs` and `/openapi.json` and drop `env` from `/health` in production.
 - `replace_task_criteria` deletes then inserts without a transaction.
 - Disable Auth signup in the hosted Supabase project settings (user action).
+- Organizer token key: slow KDF (`pbkdf2_hmac`/`scrypt`) and/or optional
+  `ORGANIZER_SESSION_SECRET`, startup warning on codes under 12 characters.
+- Organizer limiter: global failure ceiling, key IPv6 by /64, evict non-blocked
+  IPs first at the cap, log blocks (IP and time only), document proxy trust
+  (never `--forwarded-allow-ips="*"`).
+- Organizer token revocation or logout (today only rotating the code works).
+- Validate `queue_id`/`submission_id` as UUIDs (400 instead of 500).
 
 Decisions log:
+
+- 2026-10-07: T-02 accepted without a third round. Review and audit found no
+  blockers; hardening items (KDF, limiter, revocation) are follow-up issues.
+  `POST /organizer/session` must be sent with the code only: any Bearer header
+  gives 401, so the app drops a stale token before signing in again.
 
 - 2026-10-07: T-01 migration does not include the unscoped
   `alter default privileges for role postgres revoke execute on functions from public`
