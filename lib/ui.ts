@@ -1,49 +1,56 @@
 import { StyleSheet } from 'react-native';
 
-import { Colors, Fonts } from '@/constants/theme';
+import {
+  ColorScheme,
+  Palette,
+  Spacing,
+  ThemeColors,
+  Typography,
+  elevation,
+} from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export type AppThemeName = keyof typeof Colors;
+export type AppTheme = {
+  scheme: ColorScheme;
+  colors: ThemeColors;
+  isDark: boolean;
+  elevation: (level: 0 | 1 | 2 | 3) => ReturnType<typeof elevation>;
+  /** Convenience aliases for the most-reached-for colors. */
+  textColor: string;
+  backgroundColor: string;
+  tint: string;
+  border: string;
+};
 
-export function useAppTheme() {
-  const theme = (useColorScheme() ?? 'light') as AppThemeName;
-  const colors = Colors[theme];
+export function useAppTheme(): AppTheme {
+  const scheme = (useColorScheme() ?? 'light') as ColorScheme;
+  const colors = Palette[scheme];
 
   return {
-    theme,
+    scheme,
     colors,
-    textColor: colors.text,
-    backgroundColor: colors.background,
-    tint: colors.tint,
-    border: colors.icon,
+    isDark: scheme === 'dark',
+    elevation: (level) => elevation(level, colors.shadow),
+    textColor: colors.textPrimary,
+    backgroundColor: colors.canvas,
+    tint: colors.accent,
+    border: colors.border,
   };
 }
 
 export const screenStyles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+  },
+  gutter: {
+    paddingHorizontal: Spacing.lg,
   },
 });
 
+/** Legacy alias retained so older call sites keep compiling. */
 export const textStyles = StyleSheet.create({
-  default: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontFamily: Fonts?.sans,
-  },
-  defaultSemiBold: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontFamily: Fonts?.sans,
-  },
-  title: {
-    fontSize: 32,
-    fontFamily: Fonts?.serif,
-    lineHeight: 32,
-  },
-  subtitle: {
-    fontSize: 20,
-    fontFamily: Fonts?.serif,
-  },
+  default: Typography.body,
+  defaultSemiBold: Typography.bodyStrong,
+  title: Typography.display,
+  subtitle: Typography.heading,
 });

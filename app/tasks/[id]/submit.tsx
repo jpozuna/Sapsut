@@ -1,22 +1,35 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { screenStyles, textStyles, useAppTheme } from '@/lib/ui';
+import { SafeScreen } from '@/components/safe-screen';
+import {
+  AppButton,
+  AppCard,
+  AppChip,
+  AppInput,
+  AppText,
+  IconSymbol,
+  NavBar,
+  Skeleton,
+} from '@/components/ui';
+import type { IconSymbolName } from '@/components/ui/icon-symbol';
+import { HitSlop, Radius, Spacing } from '@/constants/theme';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
-import { getSavedTeamId, saveTeamId } from '@/lib/team-session';
 import { useRole } from '@/lib/role-context';
+import { getSavedTeamId, saveTeamId } from '@/lib/team-session';
+import { useAppTheme } from '@/lib/ui';
 
 type Task = {
   id: string | number;
@@ -38,9 +51,22 @@ function displayAssetLabel(asset: ImagePicker.ImagePickerAsset): string {
   return last || 'selected photo';
 }
 
+function typeMeta(type: Task['type']): { label: string; icon: IconSymbolName } {
+  switch (type) {
+    case 'text':
+      return { label: 'Text', icon: 'text.alignleft' };
+    case 'photo':
+      return { label: 'Photo', icon: 'camera.fill' };
+    case 'combo':
+      return { label: 'Text + Photo', icon: 'photo.on.rectangle' };
+    default:
+      return { label: String(type), icon: 'doc.text.fill' };
+  }
+}
+
 export default function TaskSubmitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors, textColor, backgroundColor, border, tint } = useAppTheme();
+  const { colors } = useAppTheme();
   const { role } = useRole();
 
   const [task, setTask] = useState<Task | null>(null);
@@ -52,6 +78,7 @@ export default function TaskSubmitScreen() {
   const [photoAsset, setPhotoAsset] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
   const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(null);
+  const [teamTouched, setTeamTouched] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -290,310 +317,490 @@ export default function TaskSubmitScreen() {
     router.replace('/(tabs)');
   }, []);
 
+  const meta = task ? typeMeta(task.type) : null;
+  const teamFieldError =
+    teamTouched && !teamId.trim() ? 'Enter your team ID to submit.' : undefined;
+
   return (
-    <View style={[screenStyles.container, { backgroundColor }]}>
-      <Pressable onPress={onBackToTasks} style={styles.inlineBack}>
-        <Text style={[textStyles.defaultSemiBold, { color: tint }]}>Back</Text>
-      </Pressable>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+    <SafeScreen>
+      <NavBar title="Submit answer" onBack={onBackToTasks} />
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Spacing.xxl}
       >
-        <Text style={[textStyles.title, { color: textColor }]}>Submission</Text>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {isLoadingTask ? (
+            <AppCard>
+              <View style={styles.briefSkeleton}>
+                <Skeleton width="65%" height={22} />
+                <Skeleton width="95%" height={14} />
+                <Skeleton width="80%" height={14} />
+                <Skeleton width={96} height={24} radius={Radius.pill} />
+              </View>
+            </AppCard>
+          ) : task ? (
+            <Animated.View entering={FadeInDown.duration(280)}>
+              <AppCard>
+                <View style={styles.briefHeader}>
+                  <View style={styles.briefTitle}>
+                    <AppText variant="overline" tone="tertiary">
+                      Task brief
+                    </AppText>
+                    <AppText variant="heading" style={styles.briefHeading}>
+                      {task.title}
+                    </AppText>
+                  </View>
+                  <View
+                    style={[
+                      styles.points,
+                      { backgroundColor: colors.surfaceSunken },
+                    ]}
+                  >
+                    <AppText variant="numeric" style={styles.pointsValue}>
+                      {String(task.max_points)}
+                    </AppText>
+                    <AppText variant="overline" tone="tertiary">
+                      pts
+                    </AppText>
+                  </View>
+                </View>
 
-        {isLoadingTask ? (
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Loading task…
-          </Text>
-        ) : task ? (
-          <View style={styles.taskHeader}>
-            <Text style={[textStyles.subtitle, { color: textColor }]}>
-              {task.title}
-            </Text>
-            {task.description?.trim() ? (
-              <Text
-                style={[
-                  textStyles.default,
-                  styles.description,
-                  { color: textColor },
-                ]}
-              >
-                {task.description}
-              </Text>
-            ) : null}
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
+                {task.description?.trim() ? (
+                  <AppText
+                    variant="body"
+                    tone="secondary"
+                    style={styles.briefDescription}
+                  >
+                    {task.description}
+                  </AppText>
+                ) : null}
+
+                {meta ? (
+                  <View style={styles.briefFooter}>
+                    <AppChip
+                      tone="accent"
+                      size="md"
+                      icon={
+                        <IconSymbol
+                          name={meta.icon}
+                          size={13}
+                          color={colors.accentOnSoft}
+                        />
+                      }
+                    >
+                      {meta.label}
+                    </AppChip>
+                  </View>
+                ) : null}
+              </AppCard>
+            </Animated.View>
+          ) : (
+            <AppCard
+              variant="outlined"
+              style={{ backgroundColor: colors.warningSoft }}
             >
-              Submission type:{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {task.type}
-              </Text>
-            </Text>
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
+              <View style={styles.noticeRow}>
+                <IconSymbol
+                  name="exclamationmark.triangle.fill"
+                  size={18}
+                  color={colors.warning}
+                />
+                <AppText
+                  variant="callout"
+                  style={[styles.noticeText, { color: colors.onWarningSoft }]}
+                >
+                  Couldn’t load this task. Pull to refresh the task list and try
+                  again.
+                </AppText>
+              </View>
+            </AppCard>
+          )}
+
+          {taskError ? (
+            <AppCard
+              variant="outlined"
+              style={{ backgroundColor: colors.dangerSoft }}
             >
-              Points:{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {task.max_points}
-              </Text>
-            </Text>
-          </View>
-        ) : (
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Couldn’t load this task. Pull to refresh the task list and try
-            again.
-          </Text>
-        )}
+              <View style={styles.noticeRow}>
+                <IconSymbol
+                  name="wifi.slash"
+                  size={18}
+                  color={colors.danger}
+                />
+                <AppText
+                  variant="callout"
+                  style={[styles.noticeText, { color: colors.onDangerSoft }]}
+                >
+                  Failed to load task list.
+                </AppText>
+              </View>
+            </AppCard>
+          ) : null}
 
-        {taskError ? (
-          <Text style={[textStyles.default, styles.hint, { color: tint }]}>
-            Failed to load task list.
-          </Text>
-        ) : null}
-
-        <View style={styles.field}>
-          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-            Team ID
-          </Text>
-          <TextInput
-            value={teamId}
-            onChangeText={setTeamId}
-            placeholder="Enter your team ID (we’ll remember it)"
-            placeholderTextColor={border}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isSubmitting}
-            style={[styles.input, { borderColor: border, color: colors.text }]}
-          />
-        </View>
-
-        {wantsText ? (
-          <View style={styles.field}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Text answer
-            </Text>
-            <TextInput
-              value={textAnswer}
-              onChangeText={setTextAnswer}
-              placeholder="Type your answer…"
-              placeholderTextColor={border}
+          <View style={styles.section}>
+            <AppText variant="overline" tone="tertiary">
+              Your team
+            </AppText>
+            <AppInput
+              label="Team ID"
+              value={teamId}
+              onChangeText={setTeamId}
+              onBlur={() => setTeamTouched(true)}
+              placeholder="e.g. huskies-07"
+              hint="We’ll remember this for your next submission."
+              error={teamFieldError}
+              autoCapitalize="none"
+              autoCorrect={false}
               editable={!isSubmitting}
-              multiline
-              style={[
-                styles.textarea,
-                { borderColor: border, color: colors.text },
-              ]}
+              returnKeyType="done"
             />
           </View>
-        ) : null}
 
-        {wantsPhoto ? (
-          <View style={styles.field}>
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Photo
-            </Text>
-            <View style={styles.photoRow}>
-              <Pressable
-                onPress={onTakePhoto}
-                disabled={isSubmitting}
-                style={({ pressed }) => [
-                  styles.button,
-                  { borderColor: tint },
-                  pressed ? styles.buttonPressed : null,
-                ]}
-              >
-                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                  {cameraAvailable === false
-                    ? 'Camera unavailable'
-                    : photoAsset
-                      ? 'Retake photo'
-                      : 'Take photo'}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={onPickPhoto}
-                disabled={isSubmitting}
-                style={({ pressed }) => [
-                  styles.button,
-                  { borderColor: tint },
-                  pressed ? styles.buttonPressed : null,
-                ]}
-              >
-                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                  {photoAsset ? 'Pick different' : 'Pick from library'}
-                </Text>
-              </Pressable>
-              {photoAsset ? (
-                <Pressable
-                  onPress={onRemovePhoto}
-                  disabled={isSubmitting}
-                  style={({ pressed }) => [
-                    styles.button,
-                    { borderColor: border },
-                    pressed ? styles.buttonPressed : null,
-                  ]}
-                >
-                  <Text
-                    style={[textStyles.defaultSemiBold, { color: textColor }]}
-                  >
-                    Remove
-                  </Text>
-                </Pressable>
-              ) : null}
+          {wantsText ? (
+            <View style={styles.section}>
+              <AppText variant="overline" tone="tertiary">
+                Your answer
+              </AppText>
+              <AppInput
+                label="Text answer"
+                value={textAnswer}
+                onChangeText={setTextAnswer}
+                placeholder="Type your answer…"
+                hint={`${textAnswer.trim().length} characters`}
+                editable={!isSubmitting}
+                multiline
+              />
             </View>
-            {photoAsset ? (
-              <>
-                <Text
-                  style={[
-                    textStyles.default,
-                    styles.hint,
-                    { color: textColor },
-                  ]}
-                  numberOfLines={2}
-                  ellipsizeMode="middle"
-                >
-                  Selected: {displayAssetLabel(photoAsset)}
-                </Text>
-                <View style={styles.previewFrame}>
-                  <Image
-                    source={{ uri: photoAsset.uri }}
-                    style={styles.previewImage}
-                    contentFit="cover"
-                    accessibilityLabel="Selected photo preview"
-                  />
+          ) : null}
+
+          {wantsPhoto ? (
+            <View style={styles.section}>
+              <AppText variant="overline" tone="tertiary">
+                Your photo
+              </AppText>
+
+              {photoAsset ? (
+                <View style={styles.dropzoneFilled}>
+                  <View
+                    style={[
+                      styles.previewFrame,
+                      { borderColor: colors.border },
+                    ]}
+                  >
+                    <Image
+                      source={{ uri: photoAsset.uri }}
+                      style={styles.previewImage}
+                      contentFit="cover"
+                      accessibilityLabel="Selected photo preview"
+                    />
+                    <Pressable
+                      onPress={onRemovePhoto}
+                      disabled={isSubmitting}
+                      hitSlop={HitSlop}
+                      accessibilityRole="button"
+                      accessibilityLabel="Remove selected photo"
+                      style={[
+                        styles.removeBadge,
+                        { backgroundColor: colors.scrim },
+                      ]}
+                    >
+                      <IconSymbol
+                        name="xmark"
+                        size={15}
+                        color={colors.textInverse}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.assetRow}>
+                    <IconSymbol
+                      name="checkmark.circle.fill"
+                      size={15}
+                      color={colors.success}
+                    />
+                    <AppText
+                      variant="caption"
+                      tone="tertiary"
+                      numberOfLines={1}
+                      style={styles.assetLabel}
+                    >
+                      {displayAssetLabel(photoAsset)}
+                    </AppText>
+                  </View>
+
+                  <View style={styles.photoActions}>
+                    <AppButton
+                      tone="secondary"
+                      size="sm"
+                      onPress={onTakePhoto}
+                      disabled={isSubmitting}
+                      icon={
+                        <IconSymbol
+                          name="camera.fill"
+                          size={15}
+                          color={colors.textPrimary}
+                        />
+                      }
+                    >
+                      {cameraAvailable === false
+                        ? 'Camera unavailable'
+                        : 'Retake photo'}
+                    </AppButton>
+                    <AppButton
+                      tone="ghost"
+                      size="sm"
+                      onPress={onPickPhoto}
+                      disabled={isSubmitting}
+                    >
+                      Pick different
+                    </AppButton>
+                  </View>
                 </View>
-              </>
-            ) : (
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                No photo selected.
-              </Text>
-            )}
-          </View>
-        ) : null}
+              ) : (
+                <View style={styles.dropzoneFilled}>
+                  <Pressable
+                    onPress={onPickPhoto}
+                    disabled={isSubmitting}
+                    accessibilityRole="button"
+                    accessibilityLabel="Pick a photo from your library"
+                    style={({ pressed }) => [
+                      styles.dropzone,
+                      {
+                        backgroundColor: colors.surfaceSunken,
+                        borderColor: pressed
+                          ? colors.accent
+                          : colors.borderStrong,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.dropzoneIcon,
+                        { backgroundColor: colors.accentSoft },
+                      ]}
+                    >
+                      <IconSymbol
+                        name="photo.badge.plus"
+                        size={26}
+                        color={colors.accent}
+                      />
+                    </View>
+                    <AppText variant="title">Add a photo</AppText>
+                    <AppText
+                      variant="caption"
+                      tone="tertiary"
+                      align="center"
+                      style={styles.dropzoneHint}
+                    >
+                      Tap to choose from your library
+                    </AppText>
+                  </Pressable>
 
-        {submitError ? (
-          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
-            {submitError}
-          </Text>
-        ) : null}
+                  <View style={styles.photoActions}>
+                    <AppButton
+                      tone="secondary"
+                      size="sm"
+                      onPress={onTakePhoto}
+                      disabled={isSubmitting}
+                      icon={
+                        <IconSymbol
+                          name="camera.fill"
+                          size={15}
+                          color={colors.textPrimary}
+                        />
+                      }
+                    >
+                      {cameraAvailable === false
+                        ? 'Camera unavailable'
+                        : 'Take photo'}
+                    </AppButton>
+                  </View>
+                </View>
+              )}
+            </View>
+          ) : null}
 
-        {submitSuccessId ? (
-          <Text
-            style={[
-              textStyles.default,
-              styles.successText,
-              { color: textColor },
-            ]}
+          {submitError ? (
+            <AppCard
+              variant="outlined"
+              style={{ backgroundColor: colors.dangerSoft }}
+            >
+              <View style={styles.noticeRow}>
+                <IconSymbol
+                  name="exclamationmark.triangle.fill"
+                  size={18}
+                  color={colors.danger}
+                />
+                <AppText
+                  variant="callout"
+                  style={[styles.noticeText, { color: colors.onDangerSoft }]}
+                >
+                  {submitError}
+                </AppText>
+              </View>
+            </AppCard>
+          ) : null}
+
+          {submitSuccessId ? (
+            <AppCard
+              variant="outlined"
+              style={{ backgroundColor: colors.successSoft }}
+            >
+              <View style={styles.noticeRow}>
+                <IconSymbol
+                  name="checkmark.circle.fill"
+                  size={18}
+                  color={colors.success}
+                />
+                <AppText
+                  variant="callout"
+                  style={[styles.noticeText, { color: colors.onSuccessSoft }]}
+                >
+                  {`Submitted. ID: ${submitSuccessId}`}
+                </AppText>
+              </View>
+            </AppCard>
+          ) : null}
+        </ScrollView>
+
+        <View style={[styles.footer, { borderTopColor: colors.border }]}>
+          <AppButton
+            fullWidth
+            size="lg"
+            onPress={onSubmit}
+            disabled={!canSubmit}
+            loading={isSubmitting}
           >
-            Submitted. ID:{' '}
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              {submitSuccessId}
-            </Text>
-          </Text>
-        ) : null}
-
-        <Pressable
-          onPress={onSubmit}
-          disabled={!canSubmit}
-          style={({ pressed }) => [
-            styles.submitButton,
-            { backgroundColor: canSubmit ? tint : border },
-            pressed && canSubmit ? styles.submitPressed : null,
-          ]}
-        >
-          <Text style={[textStyles.defaultSemiBold, styles.submitText]}>
-            {isSubmitting ? 'Submitting…' : 'Submit'}
-          </Text>
-        </Pressable>
-      </ScrollView>
-    </View>
+            Submit
+          </AppButton>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  inlineBack: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 6,
-    paddingVertical: 6,
+  flex: {
+    flex: 1,
   },
   content: {
-    gap: 8,
-    paddingBottom: 24,
+    gap: Spacing.lg,
+    paddingBottom: Spacing.xl,
   },
-  taskHeader: {
-    gap: 4,
+  briefSkeleton: {
+    gap: Spacing.md,
   },
-  description: {
-    opacity: 0.9,
-  },
-  hint: {
-    opacity: 0.85,
-  },
-  field: {
-    gap: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  textarea: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 110,
-    textAlignVertical: 'top',
-  },
-  photoRow: {
+  briefHeader: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+  },
+  briefTitle: {
+    flex: 1,
+    gap: Spacing.xs,
+  },
+  briefHeading: {
+    marginTop: Spacing.xxs,
+  },
+  points: {
     alignItems: 'center',
-    flexWrap: 'wrap',
+    justifyContent: 'center',
+    minWidth: 54,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm - 2,
+    borderRadius: Radius.sm,
   },
-  button: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  pointsValue: {
+    fontSize: 18,
+    lineHeight: 22,
   },
-  buttonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.99 }],
+  briefDescription: {
+    marginTop: Spacing.md,
+  },
+  briefFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.base,
+  },
+  noticeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  noticeText: {
+    flex: 1,
+  },
+  section: {
+    gap: Spacing.md,
+  },
+  dropzoneFilled: {
+    gap: Spacing.md,
+  },
+  dropzone: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    minHeight: 190,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xl,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+  },
+  dropzoneIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xs,
+  },
+  dropzoneHint: {
+    maxWidth: 240,
   },
   previewFrame: {
-    marginTop: 10,
-    borderRadius: 16,
+    borderRadius: Radius.md,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.08)',
   },
   previewImage: {
     width: '100%',
-    height: 220,
+    height: 240,
   },
-  errorText: {
-    opacity: 0.95,
-  },
-  successText: {
-    opacity: 0.95,
-  },
-  submitButton: {
-    borderRadius: 14,
-    paddingVertical: 14,
+  removeBadge: {
+    position: 'absolute',
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 30,
+    height: 30,
+    borderRadius: Radius.pill,
     alignItems: 'center',
-    marginTop: 6,
+    justifyContent: 'center',
   },
-  submitPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.995 }],
+  assetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs + 2,
   },
-  submitText: {
-    color: 'white',
+  assetLabel: {
+    flex: 1,
+  },
+  photoActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flexWrap: 'wrap',
+  },
+  footer: {
+    paddingTop: Spacing.base,
+    paddingBottom: Spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

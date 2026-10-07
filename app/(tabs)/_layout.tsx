@@ -1,29 +1,22 @@
 import { Tabs } from 'expo-router';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { FloatingTabBar, IconSymbol } from '@/components/ui';
 import { useRole } from '@/lib/role-context';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
   const { role } = useRole();
 
   return (
     <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <FloatingTabBar {...props} />}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Tasks',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <IconSymbol size={size} name="list.bullet" color={color} />
           ),
         }}
       />
@@ -31,19 +24,18 @@ export default function TabLayout() {
         name="organizer"
         options={{
           title: 'Organizer',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="sparkles" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <IconSymbol size={size} name="sparkles" color={color} />
           ),
-          // Hide unless in organizer mode.
           href: role === 'organizer' ? undefined : null,
         }}
       />
       <Tabs.Screen
         name="leaderboard"
         options={{
-          title: 'Leaderboard',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="trophy.fill" color={color} />
+          title: 'Ranks',
+          tabBarIcon: ({ color, size }) => (
+            <IconSymbol size={size} name="trophy.fill" color={color} />
           ),
         }}
       />
@@ -51,8 +43,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="gearshape.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <IconSymbol size={size} name="gearshape.fill" color={color} />
           ),
         }}
       />

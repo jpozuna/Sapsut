@@ -3,21 +3,32 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { SafeScreen } from '@/components/safe-screen';
+import {
+  AppButton,
+  AppCard,
+  AppChip,
+  AppInput,
+  AppText,
+  IconSymbol,
+  NavBar,
+} from '@/components/ui';
+import type { IconSymbolName } from '@/components/ui/icon-symbol';
+import { Radius, Spacing } from '@/constants/theme';
 import { toAppError } from '@/lib/app-error';
 import { organizerJson } from '@/lib/organizer-api';
 import { organizerUploadJson } from '@/lib/organizer-upload';
 import { useRole } from '@/lib/role-context';
-import { textStyles, useAppTheme } from '@/lib/ui';
+import { useAppTheme } from '@/lib/ui';
 
 type CreatedTask = {
   id: string;
@@ -40,6 +51,18 @@ type TaskPhoto = {
   signed_url?: string | null;
 };
 
+type TaskType = 'text' | 'photo' | 'combo';
+
+const TASK_TYPES: {
+  value: TaskType;
+  label: string;
+  icon: IconSymbolName;
+}[] = [
+  { value: 'text', label: 'Text', icon: 'text.alignleft' },
+  { value: 'photo', label: 'Photo', icon: 'camera.fill' },
+  { value: 'combo', label: 'Both', icon: 'photo.on.rectangle' },
+];
+
 function assetLabel(asset: ImagePicker.ImagePickerAsset): string {
   return (
     asset.fileName?.trim() ||
@@ -48,11 +71,33 @@ function assetLabel(asset: ImagePicker.ImagePickerAsset): string {
   );
 }
 
+function Section({
+  label,
+  children,
+  index = 0,
+}: {
+  label: string;
+  children: React.ReactNode;
+  index?: number;
+}) {
+  return (
+    <Animated.View
+      entering={FadeInDown.delay(Math.min(index, 8) * 45).duration(280)}
+      style={styles.section}
+    >
+      <AppText variant="overline" tone="tertiary">
+        {label}
+      </AppText>
+      <AppCard>{children}</AppCard>
+    </Animated.View>
+  );
+}
+
 export default function OrganizerCreateTaskScreen() {
   const { taskId: editTaskIdParam } = useLocalSearchParams<{
     taskId?: string;
   }>();
-  const { colors, textColor, backgroundColor, tint, border } = useAppTheme();
+  const { colors } = useAppTheme();
   const {
     role,
     organizerCode: sessionOrganizerCode,
@@ -92,7 +137,7 @@ export default function OrganizerCreateTaskScreen() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [taskType, setTaskType] = useState<'text' | 'photo' | 'combo'>('combo');
+  const [taskType, setTaskType] = useState<TaskType>('combo');
   const [maxPoints, setMaxPoints] = useState('10');
 
   const [criteria, setCriteria] = useState<string[]>(['']);
@@ -423,525 +468,666 @@ export default function OrganizerCreateTaskScreen() {
     [],
   );
 
+  const isEditing = Boolean(createdTask);
+  const pointsValue = Number(maxPoints.trim());
+  const pointsError =
+    maxPoints.trim().length > 0 &&
+    (!Number.isFinite(pointsValue) || pointsValue < 0)
+      ? 'Enter a whole number of points (0 or more).'
+      : undefined;
+
+  const navItems: { label: string; onPress?: () => void; active: boolean }[] = [
+    { label: 'Create', active: true },
+    { label: 'Review', onPress: onGoToReview, active: false },
+    { label: 'History', onPress: onGoToHistory, active: false },
+  ];
+
+  const canOcr = Boolean(createdTask && rubricOcrAsset && !isOcring);
+
   return (
-    <SafeScreen backgroundColor={backgroundColor}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+    <SafeScreen>
+      <NavBar
+        title={isEditing ? 'Edit task' : 'New task'}
+        rightSlot={
+          isEditing ? (
+            <AppChip tone="accent">Editing</AppChip>
+          ) : (
+            <AppChip tone="neutral">Draft</AppChip>
+          )
+        }
+      />
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-        <View style={styles.navRow}>
-          <Pressable
-            onPress={() => {}}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: tint, backgroundColor: tint },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, styles.navActiveText]}>
-              Create
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onGoToReview}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: border },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Review
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onGoToHistory}
-            style={({ pressed }) => [
-              styles.navPill,
-              { borderColor: border },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              History
-            </Text>
-          </Pressable>
-        </View>
-
-        <Text style={[textStyles.title, { color: textColor }]}>
-          Create task & Upload rubric
-        </Text>
-
-        <View style={styles.field}>
-          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-            Organizer code
-          </Text>
-          <TextInput
-            value={organizerCode}
-            onChangeText={setOrganizerCode}
-            placeholder="Organizer code"
-            placeholderTextColor={border}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            editable={!isCreating}
-            style={[styles.input, { borderColor: border, color: colors.text }]}
-          />
-        </View>
-
-        <View style={styles.field}>
-          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-            Title
-          </Text>
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Task title"
-            placeholderTextColor={border}
-            editable={!isCreating}
-            style={[styles.input, { borderColor: border, color: colors.text }]}
-          />
-        </View>
-
-        <View style={styles.field}>
-          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-            Description (optional)
-          </Text>
-          <TextInput
-            value={description}
-            onChangeText={setDescription}
-            placeholder="What should participants do?"
-            placeholderTextColor={border}
-            editable={!isCreating}
-            multiline
-            style={[
-              styles.textarea,
-              { borderColor: border, color: colors.text },
-            ]}
-          />
-        </View>
-
-        <View style={styles.row}>
-          <Pressable
-            onPress={() => setTaskType('text')}
-            style={({ pressed }) => [
-              styles.choice,
-              {
-                borderColor: taskType === 'text' ? tint : border,
-              },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Text
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setTaskType('photo')}
-            style={({ pressed }) => [
-              styles.choice,
-              {
-                borderColor: taskType === 'photo' ? tint : border,
-              },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Photo
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setTaskType('combo')}
-            style={({ pressed }) => [
-              styles.choice,
-              {
-                borderColor: taskType === 'combo' ? tint : border,
-              },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              Combo
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-            Max points
-          </Text>
-          <TextInput
-            value={maxPoints}
-            onChangeText={setMaxPoints}
-            placeholder="10"
-            placeholderTextColor={border}
-            keyboardType="number-pad"
-            editable={!isCreating}
-            style={[styles.input, { borderColor: border, color: colors.text }]}
-          />
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={[textStyles.subtitle, { color: textColor }]}>
-            Rubric (criteria)
-          </Text>
-          {!createdTask ? (
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Create the task first to run OCR and save rubric.
-            </Text>
-          ) : null}
-        </View>
-
-        <View style={styles.row}>
-          <Pressable
-            onPress={onPickRubricImage}
-            disabled={isOcring}
-            style={({ pressed }) => [
-              styles.button,
-              { borderColor: tint },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-              Pick rubric image
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onRunRubricOcr}
-            disabled={!createdTask || !rubricOcrAsset || isOcring}
-            style={({ pressed }) => [
-              styles.button,
-              {
-                borderColor:
-                  createdTask && rubricOcrAsset && !isOcring ? tint : border,
-              },
-              pressed && createdTask && rubricOcrAsset ? styles.pressed : null,
-            ]}
-          >
-            <Text
-              style={[
-                textStyles.defaultSemiBold,
-                {
-                  color:
-                    createdTask && rubricOcrAsset && !isOcring
-                      ? tint
-                      : textColor,
-                },
-              ]}
-            >
-              {isOcring ? 'Parsing…' : 'OCR rubric'}
-            </Text>
-          </Pressable>
-          {isOcring ? <ActivityIndicator color={tint} /> : null}
-        </View>
-        {rubricOcrAsset ? (
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Selected rubric image: {assetLabel(rubricOcrAsset)}
-          </Text>
-        ) : null}
-
-        {criteria.map((c, idx) => (
-          <View key={idx} style={styles.criteriaRow}>
-            <TextInput
-              value={c}
-              onChangeText={(t) =>
-                setCriteria((prev) => prev.map((p, i) => (i === idx ? t : p)))
-              }
-              placeholder={`Criterion ${idx + 1}`}
-              placeholderTextColor={border}
-              editable={!isSavingCriteria}
-              style={[
-                styles.input,
-                { borderColor: border, color: colors.text, flex: 1 },
-              ]}
-            />
-            <Pressable
-              onPress={() =>
-                setCriteria((prev) => prev.filter((_, i) => i !== idx))
-              }
-              disabled={criteria.length <= 1 || isSavingCriteria}
-              style={({ pressed }) => [
-                styles.smallButton,
-                { borderColor: border },
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                −
-              </Text>
-            </Pressable>
-          </View>
-        ))}
-
-        <View style={styles.row}>
-          <Pressable
-            onPress={() => setCriteria((prev) => [...prev, ''])}
-            disabled={isSavingCriteria}
-            style={({ pressed }) => [
-              styles.button,
-              { borderColor: tint },
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-              Add criterion
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onSaveCriteria}
-            disabled={!createdTask || isSavingCriteria}
-            style={({ pressed }) => [
-              styles.button,
-              { borderColor: createdTask ? tint : border },
-              pressed && createdTask ? styles.pressed : null,
-            ]}
-          >
-            <Text
-              style={[
-                textStyles.defaultSemiBold,
-                { color: createdTask ? tint : textColor },
-              ]}
-            >
-              {isSavingCriteria ? 'Saving…' : 'Save rubric'}
-            </Text>
-          </Pressable>
-        </View>
-
-        <Pressable
-          onPress={onCreateTask}
-          disabled={!canCreate}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            { backgroundColor: canCreate ? tint : border },
-            pressed && canCreate ? styles.pressed : null,
-          ]}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={[textStyles.defaultSemiBold, styles.primaryText]}>
-            {isCreating ? (createStep ?? 'Working…') : 'Create task'}
-          </Text>
-        </Pressable>
-
-        {createdTask ? (
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Created task ID:{' '}
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              {createdTask.id}
-            </Text>
-          </Text>
-        ) : null}
-
-        {createdTask ? (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={[textStyles.subtitle, { color: textColor }]}>
-                Photo references
-              </Text>
-            </View>
-
-            <View style={styles.row}>
+          <View style={styles.navRow}>
+            {navItems.map((item) => (
               <Pressable
-                onPress={onPickPhoto}
-                disabled={isUploadingPhoto}
-                style={({ pressed }) => [
-                  styles.button,
-                  { borderColor: tint },
-                  pressed ? styles.pressed : null,
+                key={item.label}
+                onPress={item.onPress}
+                accessibilityRole="button"
+                accessibilityState={{ selected: item.active }}
+                style={[
+                  styles.navPill,
+                  {
+                    backgroundColor: item.active
+                      ? colors.accent
+                      : colors.surfaceSunken,
+                  },
                 ]}
               >
-                <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                  Pick photo
-                </Text>
+                <AppText
+                  variant="label"
+                  style={{
+                    color: item.active ? colors.onAccent : colors.textSecondary,
+                  }}
+                >
+                  {item.label}
+                </AppText>
               </Pressable>
-              <Pressable
-                onPress={onUploadPhoto}
-                disabled={!photoAsset || isUploadingPhoto}
-                style={({ pressed }) => [
-                  styles.button,
-                  { borderColor: photoAsset ? tint : border },
-                  pressed && photoAsset ? styles.pressed : null,
-                ]}
+            ))}
+          </View>
+
+          <AppText variant="heading" style={styles.pageTitle}>
+            {isEditing ? 'Update this hunt task' : 'Author a hunt task'}
+          </AppText>
+          <AppText variant="callout" tone="secondary" style={styles.pageLead}>
+            Describe the task, choose how teams submit it, and give the AI a
+            rubric to grade against.
+          </AppText>
+
+          {error ? (
+            <View
+              style={[styles.banner, { backgroundColor: colors.dangerSoft }]}
+            >
+              <IconSymbol
+                name="exclamationmark.triangle.fill"
+                size={16}
+                color={colors.danger}
+              />
+              <AppText
+                variant="callout"
+                style={[styles.bannerText, { color: colors.onDangerSoft }]}
               >
-                <Text
-                  style={[
-                    textStyles.defaultSemiBold,
-                    { color: photoAsset ? tint : textColor },
-                  ]}
-                >
-                  {isUploadingPhoto ? 'Uploading…' : 'Upload'}
-                </Text>
-              </Pressable>
-              {isUploadingPhoto ? <ActivityIndicator color={tint} /> : null}
+                {error}
+              </AppText>
             </View>
+          ) : null}
 
-            {photoAsset ? (
-              <>
-                <Text
-                  style={[
-                    textStyles.default,
-                    styles.hint,
-                    { color: textColor },
-                  ]}
-                >
-                  Selected: {assetLabel(photoAsset)}
-                </Text>
-                <View style={styles.previewFrame}>
-                  <Image
-                    source={{ uri: photoAsset.uri }}
-                    style={styles.previewImage}
-                    contentFit="cover"
-                    accessibilityLabel="Selected photo preview"
-                  />
-                </View>
-              </>
-            ) : null}
+          <Section label="Access" index={0}>
+            <AppInput
+              label="Organizer code"
+              hint="Required to create or edit tasks."
+              value={organizerCode}
+              onChangeText={setOrganizerCode}
+              placeholder="Enter your organizer code"
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              editable={!isCreating}
+            />
+          </Section>
 
-            <Pressable
-              onPress={loadPhotos}
-              disabled={isUploadingPhoto}
-              style={({ pressed }) => [
-                styles.button,
-                { borderColor: border },
-                pressed ? styles.pressed : null,
+          <Section label="Details" index={1}>
+            <View style={styles.stack}>
+              <AppInput
+                label="Title"
+                value={title}
+                onChangeText={setTitle}
+                placeholder="e.g. Find the Husky statue"
+                editable={!isCreating}
+              />
+              <AppInput
+                label="Description"
+                hint="Optional. What should participants do?"
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Give teams the full instructions…"
+                editable={!isCreating}
+                multiline
+              />
+            </View>
+          </Section>
+
+          <Section label="Submission type" index={2}>
+            <AppText variant="callout" tone="secondary">
+              How should teams answer this task?
+            </AppText>
+            <View
+              style={[
+                styles.segmented,
+                { backgroundColor: colors.surfaceSunken },
               ]}
             >
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                Refresh photo list
-              </Text>
-            </Pressable>
+              {TASK_TYPES.map((option) => {
+                const active = taskType === option.value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => setTaskType(option.value)}
+                    disabled={isCreating}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`${option.label} submission`}
+                    style={[
+                      styles.segment,
+                      active ? { backgroundColor: colors.accent } : null,
+                    ]}
+                  >
+                    <IconSymbol
+                      name={option.icon}
+                      size={15}
+                      color={active ? colors.onAccent : colors.textSecondary}
+                    />
+                    <AppText
+                      variant="label"
+                      style={{
+                        color: active ? colors.onAccent : colors.textSecondary,
+                      }}
+                    >
+                      {option.label}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Section>
 
-            {photos.length ? (
-              <View style={styles.photoGrid}>
-                {photos.slice(0, 6).map((p) => (
-                  <View key={p.id} style={styles.photoThumb}>
-                    {p.signed_url ? (
-                      <Image
-                        source={{ uri: p.signed_url }}
-                        style={styles.thumbImage}
-                        contentFit="cover"
-                        accessibilityLabel="Task reference photo"
+          <Section label="Scoring" index={3}>
+            <AppInput
+              label="Max points"
+              hint="Whole number awarded for a fully correct submission."
+              value={maxPoints}
+              onChangeText={setMaxPoints}
+              placeholder="10"
+              keyboardType="number-pad"
+              editable={!isCreating}
+              error={pointsError}
+            />
+          </Section>
+
+          <Section label="Rubric" index={4}>
+            <View style={styles.stack}>
+              <View>
+                <AppText variant="title">Judging criteria</AppText>
+                <AppText
+                  variant="callout"
+                  tone="secondary"
+                  style={styles.sectionLead}
+                >
+                  {createdTask
+                    ? 'Upload a photo of a printed rubric to extract criteria, or write them by hand.'
+                    : 'Attach a rubric photo now — it is parsed automatically once the task is created.'}
+                </AppText>
+              </View>
+
+              <Pressable
+                onPress={onPickRubricImage}
+                disabled={isOcring}
+                accessibilityRole="button"
+                accessibilityLabel="Pick rubric image"
+                style={[
+                  styles.dropzone,
+                  {
+                    borderColor: rubricOcrAsset
+                      ? colors.accent
+                      : colors.borderStrong,
+                    backgroundColor: colors.surfaceSunken,
+                  },
+                ]}
+              >
+                {rubricOcrAsset ? (
+                  <View style={styles.dropzoneFilled}>
+                    <Image
+                      source={{ uri: rubricOcrAsset.uri }}
+                      style={styles.rubricPreview}
+                      contentFit="cover"
+                      accessibilityLabel="Selected rubric image preview"
+                    />
+                    <View style={styles.dropzoneMeta}>
+                      <AppText variant="label" numberOfLines={1}>
+                        {assetLabel(rubricOcrAsset)}
+                      </AppText>
+                      <AppText variant="caption" tone="tertiary">
+                        Tap to replace
+                      </AppText>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.dropzoneEmpty}>
+                    <View
+                      style={[
+                        styles.dropzoneIcon,
+                        { backgroundColor: colors.accentSoft },
+                      ]}
+                    >
+                      <IconSymbol
+                        name="photo.badge.plus"
+                        size={20}
+                        color={colors.accent}
                       />
-                    ) : (
-                      <View
-                        style={[
-                          styles.thumbPlaceholder,
-                          { borderColor: border },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            textStyles.default,
-                            { color: textColor, opacity: 0.8 },
-                          ]}
-                        >
-                          (no URL)
-                        </Text>
-                      </View>
-                    )}
+                    </View>
+                    <AppText variant="bodyStrong">Upload rubric photo</AppText>
+                    <AppText variant="caption" tone="tertiary" align="center">
+                      A printed rubric is scanned into criteria automatically.
+                    </AppText>
+                  </View>
+                )}
+              </Pressable>
+
+              <View style={styles.buttonRow}>
+                <AppButton
+                  tone="secondary"
+                  size="sm"
+                  onPress={onRunRubricOcr}
+                  disabled={!canOcr}
+                  loading={isOcring}
+                >
+                  {isOcring ? 'Parsing…' : 'Scan rubric'}
+                </AppButton>
+                {!createdTask ? (
+                  <AppText variant="caption" tone="tertiary" style={styles.flex}>
+                    Create the task first to scan and save the rubric.
+                  </AppText>
+                ) : null}
+              </View>
+
+              <View style={styles.stack}>
+                {criteria.map((c, idx) => (
+                  <View key={idx} style={styles.criteriaRow}>
+                    <AppInput
+                      containerStyle={styles.flex}
+                      value={c}
+                      onChangeText={(t) =>
+                        setCriteria((prev) =>
+                          prev.map((p, i) => (i === idx ? t : p)),
+                        )
+                      }
+                      placeholder={`Criterion ${idx + 1}`}
+                      editable={!isSavingCriteria}
+                      multiline
+                      style={styles.criteriaInput}
+                    />
+                    <Pressable
+                      onPress={() =>
+                        setCriteria((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                      disabled={criteria.length <= 1 || isSavingCriteria}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove criterion ${idx + 1}`}
+                      style={[
+                        styles.iconButton,
+                        {
+                          backgroundColor: colors.surfaceSunken,
+                          opacity:
+                            criteria.length <= 1 || isSavingCriteria ? 0.4 : 1,
+                        },
+                      ]}
+                    >
+                      <IconSymbol
+                        name="trash"
+                        size={16}
+                        color={colors.danger}
+                      />
+                    </Pressable>
                   </View>
                 ))}
               </View>
-            ) : (
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                No reference photos uploaded yet.
-              </Text>
-            )}
-          </>
-        ) : null}
 
-        {error ? (
-          <Text style={[textStyles.default, styles.errorText, { color: tint }]}>
-            {error}
-          </Text>
-        ) : null}
-      </ScrollView>
+              <View style={styles.buttonRow}>
+                <AppButton
+                  tone="secondary"
+                  size="sm"
+                  onPress={() => setCriteria((prev) => [...prev, ''])}
+                  disabled={isSavingCriteria}
+                  icon={
+                    <IconSymbol
+                      name="plus"
+                      size={14}
+                      color={colors.textPrimary}
+                    />
+                  }
+                >
+                  Add criterion
+                </AppButton>
+                <AppButton
+                  tone="ghost"
+                  size="sm"
+                  onPress={onSaveCriteria}
+                  disabled={!createdTask || isSavingCriteria}
+                  loading={isSavingCriteria}
+                >
+                  {isSavingCriteria ? 'Saving…' : 'Save rubric'}
+                </AppButton>
+              </View>
+            </View>
+          </Section>
+
+          {createdTask ? (
+            <Section label="Reference photos" index={5}>
+              <View style={styles.stack}>
+                <View>
+                  <AppText variant="title">Examples for graders</AppText>
+                  <AppText
+                    variant="callout"
+                    tone="secondary"
+                    style={styles.sectionLead}
+                  >
+                    Optional reference shots stored alongside this task.
+                  </AppText>
+                </View>
+
+                <Pressable
+                  onPress={onPickPhoto}
+                  disabled={isUploadingPhoto}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pick reference photo"
+                  style={[
+                    styles.dropzone,
+                    {
+                      borderColor: photoAsset
+                        ? colors.accent
+                        : colors.borderStrong,
+                      backgroundColor: colors.surfaceSunken,
+                    },
+                  ]}
+                >
+                  {photoAsset ? (
+                    <View style={styles.dropzoneFilled}>
+                      <Image
+                        source={{ uri: photoAsset.uri }}
+                        style={styles.rubricPreview}
+                        contentFit="cover"
+                        accessibilityLabel="Selected photo preview"
+                      />
+                      <View style={styles.dropzoneMeta}>
+                        <AppText variant="label" numberOfLines={1}>
+                          {assetLabel(photoAsset)}
+                        </AppText>
+                        <AppText variant="caption" tone="tertiary">
+                          Tap to replace
+                        </AppText>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.dropzoneEmpty}>
+                      <View
+                        style={[
+                          styles.dropzoneIcon,
+                          { backgroundColor: colors.accentSoft },
+                        ]}
+                      >
+                        <IconSymbol
+                          name="photo.badge.plus"
+                          size={20}
+                          color={colors.accent}
+                        />
+                      </View>
+                      <AppText variant="bodyStrong">Add a photo</AppText>
+                    </View>
+                  )}
+                </Pressable>
+
+                <View style={styles.buttonRow}>
+                  <AppButton
+                    tone="secondary"
+                    size="sm"
+                    onPress={onUploadPhoto}
+                    disabled={!photoAsset || isUploadingPhoto}
+                    loading={isUploadingPhoto}
+                  >
+                    {isUploadingPhoto ? 'Uploading…' : 'Upload'}
+                  </AppButton>
+                  <AppButton
+                    tone="ghost"
+                    size="sm"
+                    onPress={loadPhotos}
+                    disabled={isUploadingPhoto}
+                    icon={
+                      <IconSymbol
+                        name="arrow.clockwise"
+                        size={14}
+                        color={colors.accent}
+                      />
+                    }
+                  >
+                    Refresh
+                  </AppButton>
+                </View>
+
+                {photos.length ? (
+                  <View style={styles.photoGrid}>
+                    {photos.slice(0, 6).map((p) => (
+                      <View
+                        key={p.id}
+                        style={[
+                          styles.photoThumb,
+                          { backgroundColor: colors.surfaceSunken },
+                        ]}
+                      >
+                        {p.signed_url ? (
+                          <Image
+                            source={{ uri: p.signed_url }}
+                            style={styles.thumbImage}
+                            contentFit="cover"
+                            accessibilityLabel="Task reference photo"
+                          />
+                        ) : (
+                          <View style={styles.thumbPlaceholder}>
+                            <IconSymbol
+                              name="photo"
+                              size={18}
+                              color={colors.textTertiary}
+                            />
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <AppText variant="caption" tone="tertiary">
+                    No reference photos uploaded yet.
+                  </AppText>
+                )}
+
+                <View style={styles.idRow}>
+                  <AppText variant="caption" tone="tertiary">
+                    Task ID
+                  </AppText>
+                  <AppText variant="caption" tone="secondary" numberOfLines={1}>
+                    {createdTask.id}
+                  </AppText>
+                </View>
+              </View>
+            </Section>
+          ) : null}
+        </ScrollView>
+
+        <View
+          style={[
+            styles.footer,
+            {
+              backgroundColor: colors.canvas,
+              borderTopColor: colors.border,
+            },
+          ]}
+        >
+          {isCreating && createStep ? (
+            <AppText
+              variant="caption"
+              tone="tertiary"
+              align="center"
+              style={styles.footerStep}
+            >
+              {createStep}
+            </AppText>
+          ) : null}
+          <AppButton
+            fullWidth
+            size="lg"
+            onPress={onCreateTask}
+            disabled={!canCreate}
+            loading={isCreating}
+          >
+            {isEditing ? 'Save changes' : 'Create task'}
+          </AppButton>
+        </View>
+      </KeyboardAvoidingView>
     </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { gap: 10, paddingBottom: 24 },
-  navRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  navPill: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  flex: {
+    flex: 1,
   },
-  navActiveText: { color: 'white' },
-  field: { gap: 6 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+  content: {
+    paddingBottom: Spacing.xl,
   },
-  textarea: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 96,
-    textAlignVertical: 'top',
-  },
-  row: {
+  navRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  navPill: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+  },
+  pageTitle: {
+    marginBottom: Spacing.xs,
+  },
+  pageLead: {
+    marginBottom: Spacing.lg,
+  },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.sm,
+    marginBottom: Spacing.lg,
+  },
+  bannerText: {
+    flex: 1,
+  },
+  section: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  stack: {
+    gap: Spacing.base,
+  },
+  sectionLead: {
+    marginTop: Spacing.xs,
+  },
+  segmented: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    padding: Spacing.xs,
+    borderRadius: Radius.pill,
+    marginTop: Spacing.md,
+  },
+  segment: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs + 2,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radius.pill,
+  },
+  dropzone: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: Radius.md,
+    padding: Spacing.base,
+  },
+  dropzoneEmpty: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.lg,
+  },
+  dropzoneIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dropzoneFilled: {
+    gap: Spacing.md,
+  },
+  dropzoneMeta: {
+    gap: Spacing.xxs,
+  },
+  rubricPreview: {
+    width: '100%',
+    height: 180,
+    borderRadius: Radius.sm,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     flexWrap: 'wrap',
   },
-  choice: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  criteriaRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
   },
-  primaryButton: {
-    borderRadius: 14,
-    paddingVertical: 14,
+  criteriaInput: {
+    minHeight: 50,
+  },
+  iconButton: {
+    width: 50,
+    height: 50,
+    borderRadius: Radius.sm,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  primaryText: { color: 'white' },
-  pressed: { opacity: 0.9, transform: [{ scale: 0.995 }] },
-  hint: { opacity: 0.85 },
-  errorText: { opacity: 0.95 },
-  sectionHeader: { marginTop: 12 },
-  criteriaRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  smallButton: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minWidth: 44,
-    alignItems: 'center',
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
   },
-  button: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  previewFrame: {
-    borderRadius: 16,
+  photoThumb: {
+    width: 92,
+    height: 92,
+    borderRadius: Radius.sm,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.08)',
   },
-  previewImage: { width: '100%', height: 220 },
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  photoThumb: { width: 100, height: 100, borderRadius: 14, overflow: 'hidden' },
-  thumbImage: { width: '100%', height: '100%' },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
+  },
   thumbPlaceholder: {
     width: '100%',
     height: '100%',
-    borderWidth: 1,
-    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  idRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  footer: {
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.base,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.sm,
+  },
+  footerStep: {
+    marginBottom: Spacing.xxs,
   },
 });

@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Image } from 'expo-image';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { ScreenState } from '@/components/screen-state';
 import { SafeScreen } from '@/components/safe-screen';
-import { textStyles, useAppTheme } from '@/lib/ui';
+import { ScreenState } from '@/components/screen-state';
+import {
+  AppButton,
+  AppCard,
+  AppChip,
+  AppText,
+  IconSymbol,
+  NavBar,
+} from '@/components/ui';
+import type { AppChipTone } from '@/components/ui';
+import type { IconSymbolName } from '@/components/ui/icon-symbol';
+import { Radius, Spacing } from '@/constants/theme';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
+import { useAppTheme } from '@/lib/ui';
 
 type Submission = {
   id: string;
@@ -17,6 +30,9 @@ type Submission = {
   rationale?: string | null;
   confidence?: number | null;
   created_at?: string | null;
+  text_answer?: string | null;
+  /** Short-lived signed URL minted by the backend for the stored photo. */
+  photo_signed_url?: string | null;
 };
 
 function normalizeStatus(raw: unknown): string {
@@ -24,11 +40,35 @@ function normalizeStatus(raw: unknown): string {
   return s || 'pending';
 }
 
+function statusMeta(status: string): {
+  label: string;
+  tone: AppChipTone;
+  icon: IconSymbolName;
+} {
+  switch (status) {
+    case 'auto_approved':
+    case 'approved':
+      return { label: 'Approved', tone: 'success', icon: 'checkmark.seal.fill' };
+    case 'reviewed':
+      return { label: 'Reviewed', tone: 'accent', icon: 'checkmark.circle.fill' };
+    case 'flagged':
+      return {
+        label: 'Under review',
+        tone: 'warning',
+        icon: 'exclamationmark.triangle.fill',
+      };
+    case 'error':
+      return { label: 'Error', tone: 'danger', icon: 'xmark.circle.fill' };
+    default:
+      return { label: 'Processing', tone: 'neutral', icon: 'clock.fill' };
+  }
+}
+
 export default function SubmissionConfirmationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const submissionId = String(id ?? '').trim();
 
-  const { textColor, backgroundColor, tint, border } = useAppTheme();
+  const { colors } = useAppTheme();
 
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -148,186 +188,316 @@ export default function SubmissionConfirmationScreen() {
     return 'Submission complete';
   }, [isAutoApproved, isError, isUnderReview, status]);
 
+  const meta = statusMeta(status);
+
+  const score = submission?.score;
+  const hasScore = score != null && Number.isFinite(Number(score));
+
+  const confidencePct = useMemo(() => {
+    const raw = submission?.confidence;
+    if (raw == null) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    const pct = n <= 1 ? n * 100 : n;
+    return Math.max(0, Math.min(100, Math.round(pct)));
+  }, [submission?.confidence]);
+
+  const rationale = submission?.rationale?.trim() ?? '';
+  const textAnswer = submission?.text_answer?.trim() ?? '';
+  const photoUrl = submission?.photo_signed_url?.trim() ?? '';
+
   return (
     <ScreenState
       isLoading={isLoading}
       error={error}
       onRetry={onRetry}
-      loadingLabel="Checking submission status…"
+      loadingRows={3}
     >
-      <SafeScreen backgroundColor={backgroundColor}>
-        <Pressable onPress={onBackToTasks} style={styles.inlineBack}>
-          <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-            Back to tasks
-          </Text>
-        </Pressable>
-        <View style={styles.content}>
-          <Text style={[textStyles.title, { color: textColor }]}>{title}</Text>
+      <SafeScreen>
+        <NavBar
+          title="Submission"
+          onBack={onBackToTasks}
+          rightSlot={<AppChip tone={meta.tone}>{meta.label}</AppChip>}
+        />
 
-          <Text style={[textStyles.default, styles.hint, { color: textColor }]}>
-            Submission ID:{' '}
-            <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-              {submissionId}
-            </Text>
-          </Text>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          <Animated.View entering={FadeInDown.duration(280)}>
+            <AppCard>
+              <View style={styles.heroTop}>
+                <View
+                  style={[
+                    styles.iconWrap,
+                    { backgroundColor: colors.accentSoft },
+                  ]}
+                >
+                  <IconSymbol
+                    name={meta.icon}
+                    size={18}
+                    color={colors.accent}
+                  />
+                </View>
+                <View style={styles.heroTitleBlock}>
+                  <AppText variant="overline" tone="tertiary">
+                    Status
+                  </AppText>
+                  <AppText variant="heading" numberOfLines={2}>
+                    {title}
+                  </AppText>
+                </View>
+              </View>
 
-          {status === 'pending' ? (
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Status:{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                processing…
-              </Text>
-            </Text>
-          ) : null}
+              <View
+                style={[styles.divider, { backgroundColor: colors.border }]}
+              />
 
-          {isUnderReview ? (
-            <Text
-              style={[textStyles.default, styles.hint, { color: textColor }]}
-            >
-              Your submission was flagged and is{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                under review
-              </Text>
-              .
-            </Text>
+              <View style={styles.scoreRow}>
+                <View style={styles.scoreBlock}>
+                  <AppText variant="overline" tone="tertiary">
+                    AI score
+                  </AppText>
+                  <AppText
+                    variant="numericLarge"
+                    tone={hasScore ? 'primary' : 'tertiary'}
+                  >
+                    {hasScore ? String(score) : '—'}
+                  </AppText>
+                  <AppText variant="caption" tone="tertiary">
+                    {hasScore ? 'points awarded' : 'awaiting scoring'}
+                  </AppText>
+                </View>
+
+                {confidencePct != null ? (
+                  <View style={styles.confidenceBlock}>
+                    <AppText variant="overline" tone="tertiary">
+                      Confidence
+                    </AppText>
+                    <AppText variant="numeric">{`${confidencePct}%`}</AppText>
+                    <View
+                      style={[
+                        styles.track,
+                        { backgroundColor: colors.surfaceSunken },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.fill,
+                          {
+                            backgroundColor: colors.accent,
+                            width: `${confidencePct}%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            </AppCard>
+          </Animated.View>
+
+          {textAnswer || photoUrl ? (
+            <Animated.View entering={FadeInDown.delay(45).duration(280)}>
+              <AppCard variant="outlined">
+                <AppText variant="overline" tone="tertiary">
+                  Your submission
+                </AppText>
+
+                {photoUrl ? (
+                  <Image
+                    source={{ uri: photoUrl }}
+                    style={styles.photo}
+                    contentFit="cover"
+                    transition={200}
+                  />
+                ) : null}
+
+                {textAnswer ? (
+                  <AppText variant="body" style={styles.cardBody}>
+                    {textAnswer}
+                  </AppText>
+                ) : null}
+              </AppCard>
+            </Animated.View>
           ) : null}
 
           {isError ? (
-            <Text style={[textStyles.default, styles.hint, { color: tint }]}>
-              We hit an error processing your submission
-              {submission?.rationale?.trim()
-                ? `: ${submission.rationale.trim()}`
-                : '.'}
-            </Text>
+            <Animated.View entering={FadeInDown.delay(90).duration(280)}>
+              <AppCard variant="outlined" style={{ borderColor: colors.danger }}>
+                <AppText variant="overline" tone="tertiary">
+                  What happened
+                </AppText>
+                <AppText
+                  variant="body"
+                  tone="danger"
+                  style={styles.cardBody}
+                >
+                  {`We hit an error processing your submission${
+                    rationale ? `: ${rationale}` : '.'
+                  }`}
+                </AppText>
+              </AppCard>
+            </Animated.View>
+          ) : rationale ? (
+            <Animated.View entering={FadeInDown.delay(45).duration(280)}>
+              <AppCard variant="sunken">
+                <AppText variant="overline" tone="tertiary">
+                  AI rationale
+                </AppText>
+                <AppText variant="body" style={styles.cardBody}>
+                  {rationale}
+                </AppText>
+              </AppCard>
+            </Animated.View>
           ) : null}
 
-          {isAutoApproved && submission?.score != null ? (
-            <View style={styles.resultBox}>
-              <Text
-                style={[textStyles.default, styles.hint, { color: textColor }]}
-              >
-                Score:{' '}
-                <Text
-                  style={[textStyles.defaultSemiBold, { color: textColor }]}
+          {isUnderReview ? (
+            <Animated.View entering={FadeInDown.delay(90).duration(280)}>
+              <AppCard variant="outlined">
+                <AppText variant="overline" tone="tertiary">
+                  Next step
+                </AppText>
+                <AppText
+                  variant="callout"
+                  tone="secondary"
+                  style={styles.cardBody}
                 >
-                  {String(submission.score)}
-                </Text>
-              </Text>
-              {submission?.rationale?.trim() ? (
-                <Text
-                  style={[
-                    textStyles.default,
-                    styles.hint,
-                    { color: textColor },
-                  ]}
+                  Your submission was flagged and is now with an organizer for
+                  manual review.
+                </AppText>
+              </AppCard>
+            </Animated.View>
+          ) : null}
+
+          <Animated.View entering={FadeInDown.delay(135).duration(280)}>
+            <AppCard variant="outlined">
+              <AppText variant="overline" tone="tertiary">
+                Details
+              </AppText>
+
+              <View style={styles.detailRow}>
+                <AppText variant="callout" tone="secondary">
+                  Submission ID
+                </AppText>
+                <AppText
+                  variant="bodyStrong"
+                  numberOfLines={1}
+                  style={styles.detailValue}
                 >
-                  Rationale:{' '}
-                  <Text
-                    style={[textStyles.defaultSemiBold, { color: textColor }]}
-                  >
-                    {submission.rationale.trim()}
-                  </Text>
-                </Text>
-              ) : null}
-            </View>
+                  {submissionId || '—'}
+                </AppText>
+              </View>
+
+              <View style={styles.detailRow}>
+                <AppText variant="callout" tone="secondary">
+                  Raw status
+                </AppText>
+                <AppText variant="bodyStrong">{status}</AppText>
+              </View>
+            </AppCard>
+          </Animated.View>
+
+          {!submissionId ? (
+            <AppText variant="callout" tone="danger">
+              Missing submission id.
+            </AppText>
           ) : null}
 
           {isTerminal ? (
-            <Pressable
-              onPress={onBackToTasks}
-              style={({ pressed }) => [
-                styles.button,
-                { borderColor: tint, backgroundColor: 'transparent' },
-                pressed ? styles.buttonPressed : null,
-              ]}
-            >
-              <Text style={[textStyles.defaultSemiBold, { color: tint }]}>
-                Back to tasks
-              </Text>
-            </Pressable>
+            <AppButton tone="primary" fullWidth onPress={onBackToTasks}>
+              Back to tasks
+            </AppButton>
           ) : (
-            <Text
-              style={[
-                textStyles.default,
-                styles.hint,
-                { color: textColor, opacity: 0.7 },
-              ]}
-            >
-              We’ll update this screen automatically.
-            </Text>
+            <View style={styles.pendingNote}>
+              <IconSymbol
+                name="clock.arrow.circlepath"
+                size={14}
+                color={colors.textTertiary}
+              />
+              <AppText variant="caption" tone="tertiary">
+                We’ll update this screen automatically.
+              </AppText>
+            </View>
           )}
-
-          {!submissionId ? (
-            <Text style={[textStyles.default, styles.hint, { color: tint }]}>
-              Missing submission id.
-            </Text>
-          ) : null}
-
-          <View
-            style={[
-              styles.statusPill,
-              { borderColor: border, backgroundColor: 'transparent' },
-            ]}
-          >
-            <Text
-              style={[
-                textStyles.default,
-                styles.pillText,
-                { color: textColor },
-              ]}
-            >
-              Status:{' '}
-              <Text style={[textStyles.defaultSemiBold, { color: textColor }]}>
-                {status}
-              </Text>
-            </Text>
-          </View>
-        </View>
+        </ScrollView>
       </SafeScreen>
     </ScreenState>
   );
 }
 
 const styles = StyleSheet.create({
-  inlineBack: {
-    alignSelf: 'flex-start',
-    paddingVertical: 6,
-    paddingHorizontal: 6,
-  },
   content: {
-    gap: 10,
+    gap: Spacing.md,
+    paddingBottom: Spacing.xxl,
   },
-  hint: {
-    opacity: 0.9,
-  },
-  resultBox: {
-    gap: 8,
-    paddingTop: 6,
-  },
-  button: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  heroTop: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-    alignSelf: 'flex-start',
+    gap: Spacing.md,
   },
-  buttonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.99 }],
+  heroTitleBlock: {
+    flex: 1,
+    gap: Spacing.xxs,
   },
-  statusPill: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignSelf: 'flex-start',
+  iconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  pillText: {
-    opacity: 0.85,
+  divider: {
+    height: 1,
+    marginVertical: Spacing.base,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.xl,
+  },
+  scoreBlock: {
+    gap: Spacing.xxs,
+  },
+  confidenceBlock: {
+    flex: 1,
+    gap: Spacing.xxs,
+  },
+  track: {
+    height: 6,
+    borderRadius: Radius.pill,
+    overflow: 'hidden',
+    marginTop: Spacing.xs,
+  },
+  fill: {
+    height: '100%',
+    borderRadius: Radius.pill,
+  },
+  photo: {
+    width: '100%',
+    height: 220,
+    borderRadius: Radius.sm,
+    marginTop: Spacing.md,
+  },
+  cardBody: {
+    marginTop: Spacing.sm,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.base,
+    marginTop: Spacing.md,
+  },
+  detailValue: {
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  pendingNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs + 2,
+    paddingVertical: Spacing.sm,
   },
 });

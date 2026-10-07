@@ -1,49 +1,52 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { textStyles, useAppTheme } from '@/lib/ui';
+import { SafeScreen } from '@/components/safe-screen';
+import { Skeleton, SkeletonCard } from '@/components/ui';
+import { Spacing } from '@/constants/theme';
+import { useAppTheme } from '@/lib/ui';
 
 export type AppLoadingProps = {
-  label?: string;
+  /** Number of placeholder cards to render. */
+  rows?: number;
   fullScreen?: boolean;
 };
 
-export function AppLoading({
-  label = 'Loading…',
-  fullScreen = true,
-}: AppLoadingProps) {
-  const { tint: spinnerColor, textColor, backgroundColor } = useAppTheme();
+/**
+ * Skeleton-based loading state. Showing the shape of the incoming content reads
+ * as faster than a centered spinner.
+ */
+export function AppLoading({ rows = 4, fullScreen = true }: AppLoadingProps) {
+  const { colors } = useAppTheme();
 
   const content = (
     <View style={styles.content}>
-      <ActivityIndicator size="large" color={spinnerColor} />
-      {label ? (
-        <Text style={[textStyles.default, styles.label, { color: textColor }]}>
-          {label}
-        </Text>
-      ) : null}
+      <View style={styles.header}>
+        <Skeleton width={132} height={30} />
+        <Skeleton width={190} height={14} />
+      </View>
+      <View style={styles.list}>
+        {Array.from({ length: rows }).map((_, i) => (
+          <SkeletonCard key={i} />
+        ))}
+      </View>
     </View>
   );
 
   if (!fullScreen) return content;
 
-  return (
-    <View style={[styles.fullScreen, { backgroundColor }]}>{content}</View>
-  );
+  return <SafeScreen backgroundColor={colors.canvas}>{content}</SafeScreen>;
 }
 
 const styles = StyleSheet.create({
-  fullScreen: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
   content: {
-    alignItems: 'center',
-    gap: 12,
+    flex: 1,
+    gap: Spacing.xl,
   },
-  label: {
-    textAlign: 'center',
-    opacity: 0.9,
+  header: {
+    gap: Spacing.md,
+    paddingTop: Spacing.sm,
+  },
+  list: {
+    gap: Spacing.md,
   },
 });
