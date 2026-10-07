@@ -1,4 +1,69 @@
-# Board: Security hardening (issue #53)
+# Board: Team isolation (issue #55)
+
+| ID   | Title                                        | Status      | Mode   | Depends on      | Parallel group |
+| ---- | -------------------------------------------- | ----------- | ------ | --------------- | -------------- |
+| T-10 | Signed team session token on the backend     | done        | inline | none            | 1              |
+| T-13 | Team session and Join team screen in app     | in-progress | inline | none (contract) | 1              |
+| T-11 | Organizer-created teams and invite join      | todo        | inline | T-10            | 2              |
+| T-12 | Team-scoped submissions, no client paths     | todo        | inline | T-10            | 2              |
+| T-14 | Submit and Settings use the team session     | todo        | inline | T-12, T-13      | 3              |
+| T-15 | Task list and detail use the team session    | todo        | inline | T-12, T-13      | 3              |
+| T-16 | Organizer Teams screen                       | todo        | inline | T-11            | 3              |
+| M-02 | Remove deprecated team-session exports (mgr) | todo        | inline | T-14, T-15      | after 3        |
+
+Concurrency cap: 3
+
+Out of scope: rate limits on join and team create (#56), per-team token
+revocation, the leaderboard (still public, shows names and scores only).
+
+Deploy note: the backend needs `TEAM_SESSION_SECRET` set before this ships.
+Backend and app must ship together; old app builds stop being able to submit.
+
+## Contract (fixed for all tickets)
+
+- Header: `X-Team-Token: <token>`. Not `Authorization`, because organizer
+  routes treat any Bearer as an organizer token.
+- 401 detail: `"Invalid or missing team token."`. 500 when unconfigured:
+  `"Team access is not configured."`.
+- Token: HMAC-SHA256 keyed by `TEAM_SESSION_SECRET`, payload
+  `<team_id>:<expiry>:<nonce>`, TTL 7 days. Rotating the secret signs out every
+  team.
+- `POST /teams/` (organizer) `{name}` -> `{id, name, invite_code}`
+- `GET /teams/` (organizer) -> `[{id, name, invite_code, total_score, created_at}]`
+- `POST /teams/join` (public) `{invite_code}` ->
+  `{team: {id, name}, token, expires_at}`; unknown code -> 404 `"Team not found"`
+- `GET /teams/me` (team) -> `{id, name, total_score}`
+- Removed: `GET /teams/{id}`, `GET /teams/?invite_code=`
+- `POST /submissions/` (team): team from token; `team_id` field optional, 403
+  `"Team mismatch."` if different; `photo_path` field removed
+- `GET /submissions/?task_id=` (team): token's team only; `team_id` optional,
+  403 if different
+- `GET /submissions/{id}` (team): other team's row -> 404; signed URL only for
+  `{team_id}/{task_id}/<uuid>.<ext>` paths
+
+Decisions log:
+
+- 2026-10-07: T-10 accepted. From its security audit, `TEAM_SESSION_SECRET`
+  must be 32+ characters and differ from `ORGANIZER_DEMO_CODE`, or team routes
+  give 500 "not configured" (`/teams/join` hands out signed tokens, so a weak
+  secret could be brute-forced offline). Skipped the optional expiry upper bound:
+  only the server can sign.
+- 2026-10-07: Next batch is #55 only (user). Teams are created by organizers
+  only (user). An event is coming, so organizers get a Teams screen listing
+  invite codes, and existing teams rejoin with their code (hard cutover, no
+  raw `team_id` fallback).
+- 2026-10-07: App stores the team session in SecureStore on native and
+  AsyncStorage on web. Unlike the organizer token, it persists on web so players
+  don't rejoin on every reload; it is team-scoped and expires in 7 days.
+- 2026-10-07: Old rows whose `photo_url` came from a client `photo_path` are
+  not migrated; `GET /submissions/{id}` just stops signing paths that don't
+  match the row's own team and task.
+- 2026-10-07: `/team` join screen sits in T-13 because typed routes are on: the
+  screens that link to it can't type-check before it exists.
+
+---
+
+## Previous board: Security hardening (issue #53), done
 
 | ID   | Title                                      | Status | Mode   | Depends on | Parallel group |
 | ---- | ------------------------------------------ | ------ | ------ | ---------- | -------------- |
