@@ -1,5 +1,5 @@
 import { PropsWithChildren } from 'react';
-import { StyleProp, Text, TextStyle } from 'react-native';
+import { AccessibilityRole, StyleProp, Text, TextStyle } from 'react-native';
 
 import { Typography, TypographyVariant } from '@/constants/theme';
 import { useAppTheme } from '@/lib/ui';
@@ -19,6 +19,7 @@ type AppTextProps = PropsWithChildren<{
   tone?: AppTextTone;
   align?: TextStyle['textAlign'];
   numberOfLines?: number;
+  accessibilityRole?: AccessibilityRole;
   style?: StyleProp<TextStyle>;
 }>;
 
@@ -27,6 +28,7 @@ export function AppText({
   tone = 'primary',
   align,
   numberOfLines,
+  accessibilityRole,
   style,
   children,
 }: AppTextProps) {
@@ -46,6 +48,7 @@ export function AppText({
   return (
     <Text
       numberOfLines={numberOfLines}
+      accessibilityRole={accessibilityRole}
       style={[Typography[variant], { color, textAlign: align }, style]}
     >
       {children}

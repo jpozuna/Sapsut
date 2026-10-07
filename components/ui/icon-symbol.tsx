@@ -27,6 +27,7 @@ const MAPPING = {
   'arrow.right': 'arrow-forward',
   'arrow.up.right': 'north-east',
   'arrow.clockwise': 'refresh',
+  'arrow.up.arrow.down': 'swap-vert',
   ellipsis: 'more-horiz',
 
   // Actions

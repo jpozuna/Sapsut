@@ -68,7 +68,7 @@ export default function SettingsScreen() {
       <SafeScreen>
         <ScreenHeader
           title="Settings"
-          subtitle={`You're browsing Sapsut as a ${modeLabel.toLowerCase()}.`}
+          subtitle={`You're browsing Sapsut as ${isOrganizer ? 'an organizer' : 'a participant'}.`}
           rightSlot={
             <AppChip tone={isOrganizer ? 'brick' : 'accent'} size="md">
               {modeLabel}
@@ -167,36 +167,6 @@ export default function SettingsScreen() {
                     Switch to Organizer
                   </AppButton>
                 )}
-              </View>
-            </AppCard>
-          </Animated.View>
-
-          <Animated.View
-            entering={FadeInDown.delay(90).duration(280)}
-            style={styles.section}
-          >
-            <AppText variant="overline" tone="tertiary">
-              About
-            </AppText>
-
-            <AppCard variant="sunken">
-              <View style={styles.row}>
-                <View
-                  style={[styles.iconWrap, { backgroundColor: colors.surface }]}
-                >
-                  <IconSymbol
-                    name="info.circle.fill"
-                    size={17}
-                    color={colors.textTertiary}
-                  />
-                </View>
-                <View style={styles.rowBody}>
-                  <AppText variant="bodyStrong">Husky Hunt companion</AppText>
-                  <AppText variant="caption" tone="secondary">
-                    Submit answers, track scoring, and follow the leaderboard
-                    through the 24-hour hunt.
-                  </AppText>
-                </View>
               </View>
             </AppCard>
           </Animated.View>
