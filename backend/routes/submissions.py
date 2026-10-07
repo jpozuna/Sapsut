@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 
 import anyio
@@ -9,10 +10,11 @@ from typing import Any, Dict, Optional
 from postgrest.exceptions import APIError
 
 from auth.organizer import require_organizer
+from auth.team import canonical_team_id, require_team
 from services import get_supabase
 from services.scoring import score_submission
 from services.storage import storage_bucket
-from services.uploads import read_validated_image
+from services.uploads import ALLOWED_IMAGE_TYPES, read_validated_image
 
 logger = logging.getLogger(__name__)
 
@@ -79,23 +81,64 @@ def _participant_view(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+_TEAM_MISMATCH_DETAIL = "Team mismatch."
+
+_UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+# Uploads before T-07 stored JPEGs as ".jpeg"; those rows are still server-generated.
+_LEGACY_PHOTO_EXTENSIONS = {"jpeg"}
+_PHOTO_EXTENSIONS = "|".join(
+    sorted(re.escape(e) for e in set(ALLOWED_IMAGE_TYPES.values()) | _LEGACY_PHOTO_EXTENSIONS)
+)
+
+
+def _check_team_param(supplied: Optional[str], token_team_id: str) -> None:
+    """403 if the client sent a team_id that is not the token's team."""
+    if supplied is None:
+        return
+    if canonical_team_id(supplied) != token_team_id:
+        raise HTTPException(status_code=403, detail=_TEAM_MISMATCH_DETAIL)
+
+
+def _signable_photo_path(row: Dict[str, Any]) -> Optional[str]:
+    """The row's photo path if the server could have generated it, else None.
+
+    Only `{team_id}/{task_id}/<uuid>.<ext>` built from the row's own ids is signed.
+    Older rows written through the removed `photo_path` field can hold any path.
+    """
+    path = row.get("photo_url")
+    if not isinstance(path, str) or not path:
+        return None
+    team = canonical_team_id(row.get("team_id"))
+    task = canonical_team_id(row.get("task_id"))
+    if team is None or task is None:
+        return None
+    pattern = f"{re.escape(team)}/{re.escape(task)}/{_UUID_PATTERN}\\.(?:{_PHOTO_EXTENSIONS})"
+    return path if re.fullmatch(pattern, path) else None
+
+
 @router.get("/{id}")
-async def get_submission(id: str) -> Dict[str, Any]:
+async def get_submission(id: str, team_id: str = Depends(require_team)) -> Dict[str, Any]:
+    # A non-UUID id can't exist, and sending it to a uuid column makes PostgREST fail.
+    submission_id = canonical_team_id(id)
+    if submission_id is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
     supabase = get_supabase()
     rows = (
         supabase.table("submissions")
         .select(f"{_PARTICIPANT_COLUMNS},photo_url")
-        .eq("id", id)
+        .eq("id", submission_id)
         .limit(1)
         .execute()
         .data
     )
-    if not rows:
+    # Another team's row looks the same as a missing one.
+    if not rows or canonical_team_id(rows[0].get("team_id")) != team_id:
         raise HTTPException(status_code=404, detail="Submission not found")
     row: Dict[str, Any] = rows[0]
     submission = _participant_view(row)
 
-    photo_path = row.get("photo_url")
+    photo_path = _signable_photo_path(row)
     if photo_path:
         try:
             signed = await anyio.to_thread.run_sync(
@@ -105,25 +148,32 @@ async def get_submission(id: str) -> Dict[str, Any]:
             if signed_url:
                 submission["photo_signed_url"] = signed_url
         except Exception:
-            pass
+            logger.warning("Signing the photo for submission %s failed", submission_id)
+    elif row.get("photo_url"):
+        logger.warning("Submission %s has a photo path that is not signable", submission_id)
 
     return submission
 
 
 @router.get("/")
 def list_submissions(
-    team_id: str = Query(...),
+    token_team_id: str = Depends(require_team),
+    team_id: Optional[str] = Query(None),
     task_id: Optional[str] = Query(None),
 ) -> Any:
+    _check_team_param(team_id, token_team_id)
     supabase = get_supabase()
     q = (
         supabase.table("submissions")
         .select(_PARTICIPANT_COLUMNS)
-        .eq("team_id", team_id)
+        .eq("team_id", token_team_id)
         .order("created_at", desc=True)
     )
     if task_id:
-        q = q.eq("task_id", task_id)
+        canonical_task_id = canonical_team_id(task_id)
+        if canonical_task_id is None:
+            raise HTTPException(status_code=400, detail="task_id must be a UUID")
+        q = q.eq("task_id", canonical_task_id)
     return [_participant_view(r) for r in (q.execute().data or [])]
 
 
@@ -131,21 +181,21 @@ def list_submissions(
 async def create_submission(
     background_tasks: BackgroundTasks,
     task_id: str = Form(...),
-    team_id: str = Form(...),
+    team_id: Optional[str] = Form(None),
     text_answer: str = Form(None),
-    photo_path: str = Form(None),
     photo: UploadFile = File(None),
+    token_team_id: str = Depends(require_team),
 ):
-    # Validate ids early; PostgREST returns a 500 if we send non-UUID text into uuid columns.
-    try:
-        uuid.UUID(str(task_id))
-    except Exception:
-        raise HTTPException(status_code=400, detail="task_id must be a UUID")
+    # The team always comes from the token. A client team_id is only checked against it.
+    _check_team_param(team_id, token_team_id)
+    team_id = token_team_id
 
-    try:
-        uuid.UUID(str(team_id))
-    except Exception:
-        raise HTTPException(status_code=400, detail="team_id must be a UUID")
+    # Validate the id early; PostgREST returns a 500 if we send non-UUID text into uuid columns.
+    # Canonical form keeps the storage path matching what GET /submissions/{id} will sign.
+    canonical_task_id = canonical_team_id(task_id)
+    if canonical_task_id is None:
+        raise HTTPException(status_code=400, detail="task_id must be a UUID")
+    task_id = canonical_task_id
 
     submission_id = str(uuid.uuid4())
     supabase = get_supabase()
@@ -185,7 +235,6 @@ async def create_submission(
             }
 
     normalized_text_answer = text_answer or ""
-    normalized_photo_path = (photo_path or "").strip() or None
 
     wants_text = task_type in {"text", "combo"}
     wants_photo = task_type in {"photo", "combo"}
@@ -195,15 +244,11 @@ async def create_submission(
         if not normalized_text_answer.strip():
             return {"error": "Submission must include text_answer."}
     else:
-        if (
-            (not normalized_text_answer.strip())
-            and (photo is None)
-            and (normalized_photo_path is None)
-        ):
-            return {"error": "Submission must include text_answer, photo, or photo_path."}
+        if (not normalized_text_answer.strip()) and (photo is None):
+            return {"error": "Submission must include text_answer or photo."}
 
-    stored_photo_path = normalized_photo_path
-    if (stored_photo_path is None) and (photo is not None):
+    stored_photo_path: Optional[str] = None
+    if photo is not None:
         # Important: read and upload during the request lifecycle.
         # Validates type (415) and size (413) before anything is stored or inserted.
         validated = await read_validated_image(photo)

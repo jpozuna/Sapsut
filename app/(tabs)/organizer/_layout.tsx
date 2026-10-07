@@ -20,6 +20,7 @@ export default function OrganizerTabLayout() {
       <Stack.Screen name="create-task" />
       <Stack.Screen name="review" />
       <Stack.Screen name="history" />
+      <Stack.Screen name="teams" />
     </Stack>
   );
 }

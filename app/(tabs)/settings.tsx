@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -18,6 +18,7 @@ import type { IconSymbolName } from '@/components/ui/icon-symbol';
 import { Radius, Spacing } from '@/constants/theme';
 import { toAppError } from '@/lib/app-error';
 import { useRole } from '@/lib/role-context';
+import { useTeamSession } from '@/lib/team-session';
 import { useAppTheme } from '@/lib/ui';
 
 export default function SettingsScreen() {
@@ -25,6 +26,8 @@ export default function SettingsScreen() {
 
   const { role, isHydrating, enterOrganizerMode, exitOrganizerMode } =
     useRole();
+
+  const { session: teamSession, isLoading: isTeamLoading } = useTeamSession();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [codeDraft, setCodeDraft] = useState('');
@@ -83,12 +86,21 @@ export default function SettingsScreen() {
     setError(null);
   }, [isSubmitting]);
 
+  const onOpenTeam = useCallback(() => {
+    router.push('/team');
+  }, []);
+
   const onSwitchToParticipant = useCallback(() => {
     exitOrganizerMode();
     router.replace('/(tabs)');
   }, [exitOrganizerMode]);
 
   const isOrganizer = role === 'organizer';
+  const teamLabel = isTeamLoading
+    ? 'Checking…'
+    : teamSession
+      ? teamSession.teamName.trim() || 'Unnamed team'
+      : 'Join your team';
   const modeIcon: IconSymbolName = isOrganizer ? 'lock.fill' : 'person.fill';
 
   return (
@@ -141,6 +153,45 @@ export default function SettingsScreen() {
                 </AppChip>
               </View>
             </AppCard>
+
+            {!isHydrating && !isOrganizer ? (
+              <Pressable
+                onPress={onOpenTeam}
+                accessibilityRole="button"
+                accessibilityLabel={`Your team, ${teamLabel}`}
+                accessibilityHint="Opens team settings"
+              >
+                <AppCard>
+                  <View style={styles.row}>
+                    <View
+                      style={[
+                        styles.iconWrap,
+                        { backgroundColor: colors.accentSoft },
+                      ]}
+                    >
+                      <IconSymbol
+                        name="person.2.fill"
+                        size={17}
+                        color={colors.accent}
+                      />
+                    </View>
+
+                    <View style={styles.rowBody}>
+                      <AppText variant="title">Your team</AppText>
+                      <AppText variant="caption" tone="secondary">
+                        {teamLabel}
+                      </AppText>
+                    </View>
+
+                    <IconSymbol
+                      name="chevron.right"
+                      size={16}
+                      color={colors.textTertiary}
+                    />
+                  </View>
+                </AppCard>
+              </Pressable>
+            ) : null}
           </Animated.View>
 
           <Animated.View

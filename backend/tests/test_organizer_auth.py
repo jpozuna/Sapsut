@@ -26,8 +26,9 @@ CODE = "secret"
 GOOD = {"X-Organizer-Code": CODE}
 BAD = {"X-Organizer-Code": "nope"}
 
-# Non-GET routes intentionally open to participants.
-PUBLIC_NON_GET = {("POST", "/submissions/"), ("POST", "/teams/")}
+# Non-GET routes without organizer auth: POST /submissions/ is team-token guarded, and
+# POST /teams/join is public (it exchanges an invite code for a team token).
+PUBLIC_NON_GET = {("POST", "/submissions/"), ("POST", "/teams/join")}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Non-APIRoute routes FastAPI registers itself (docs and schema); anything else is suspect.
 NON_API_ALLOWLIST = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
@@ -91,7 +92,8 @@ def _guarded_targets(app):
     targets = []
     for r in _api_routes(app):
         is_rescore = r.path == "/submissions/{id}/rescore"
-        if r.path.startswith("/organizer") or is_rescore:
+        is_team_admin = r.path == "/teams/"
+        if r.path.startswith("/organizer") or is_rescore or is_team_admin:
             for m in sorted(r.methods - {"HEAD", "OPTIONS"}):
                 targets.append((m, r.path))
     return targets
@@ -102,6 +104,8 @@ def test_guarded_targets_are_found(real_app):
     assert ("GET", "/organizer/session") in targets
     assert ("POST", "/organizer/tasks") in targets
     assert ("POST", "/submissions/{id}/rescore") in targets
+    assert ("POST", "/teams/") in targets
+    assert ("GET", "/teams/") in targets
     assert len(targets) >= 10
 
 
@@ -712,3 +716,22 @@ def test_env_example_documents_the_organizer_code():
     idx = lines.index("ORGANIZER_DEMO_CODE=")
     assert idx > 0 and lines[idx - 1].startswith("#")
     assert "12+" in lines[idx - 1]
+
+
+def _padding_bit_variant(text: str) -> str:
+    """Same decoded bytes as ``text`` (a 43-char encoding of 32 bytes), different string."""
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    last = alphabet.index(text[-1])
+    return text[:-1] + alphabet[last ^ 1]
+
+
+def test_signature_with_altered_unused_bits_is_rejected(client):
+    token = _mint(client)["token"]
+    payload_b64, sig_b64 = token.split(".")
+    assert len(sig_b64) == 43
+    variant = f"{payload_b64}.{_padding_bit_variant(sig_b64)}"
+    assert base64.urlsafe_b64decode(sig_b64 + "=") == base64.urlsafe_b64decode(
+        _padding_bit_variant(sig_b64) + "="
+    )
+    resp = client.get("/organizer/session", headers=_bearer(variant))
+    assert resp.status_code == 401

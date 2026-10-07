@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -11,7 +11,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { useRole } from '@/lib/role-context';
-import { getSavedTeamId } from '@/lib/team-session';
+import { useTeamSession } from '@/lib/team-session';
 import { useAppTheme } from '@/lib/ui';
 
 type LeaderboardTeam = {
@@ -37,24 +37,14 @@ export default function LeaderboardScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(undefined);
-  const [myTeamId, setMyTeamId] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inFlightRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const saved = await getSavedTeamId(
-        role === 'organizer' ? 'organizer' : 'participant',
-      );
-      if (mounted) setMyTeamId(saved);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [role]);
+  // Organizers have no team, so nothing is highlighted for them.
+  const { session } = useTeamSession();
+  const myTeamId = role === 'organizer' ? null : (session?.teamId ?? null);
 
   const fetchLeaderboard = useCallback(async () => {
     // Prevent overlapping requests (slow networks vs the 5s poll interval).

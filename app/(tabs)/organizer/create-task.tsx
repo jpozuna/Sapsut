@@ -467,6 +467,10 @@ export default function OrganizerCreateTaskScreen() {
     () => router.push('/(tabs)/organizer/history'),
     [],
   );
+  const onGoToTeams = useCallback(
+    () => router.push('/(tabs)/organizer/teams'),
+    [],
+  );
 
   const isEditing = Boolean(createdTask);
   const pointsValue = Number(maxPoints.trim());
@@ -480,6 +484,7 @@ export default function OrganizerCreateTaskScreen() {
     { label: 'Create', active: true },
     { label: 'Review', onPress: onGoToReview, active: false },
     { label: 'History', onPress: onGoToHistory, active: false },
+    { label: 'Teams', onPress: onGoToTeams, active: false },
   ];
 
   const canOcr = Boolean(createdTask && rubricOcrAsset && !isOcring);
@@ -997,10 +1002,13 @@ const styles = StyleSheet.create({
   },
   navRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
     marginBottom: Spacing.lg,
   },
   navPill: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.pill,

@@ -142,7 +142,13 @@ def _b64encode(data: bytes) -> str:
 
 def _b64decode(text: str) -> bytes:
     padded = text + "=" * (-len(text) % 4)
-    return base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
+    raw = base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
+    # Only the canonical unpadded form is accepted. Otherwise several strings decode to
+    # the same bytes (unused trailing bits, "+"/"/", stray "="), so a tampered token
+    # could still verify.
+    if _b64encode(raw) != text:
+        raise ValueError("non-canonical base64")
+    return raw
 
 
 def _sign(code: str, payload_b64: str) -> bytes:
