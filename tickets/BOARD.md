@@ -1,4 +1,31 @@
-# Board: Team isolation (issue #55)
+# Board: Legacy photo paths in scoring and review (issue #68)
+
+| ID   | Title                                            | Status | Mode   | Depends on | Parallel group |
+| ---- | ------------------------------------------------ | ------ | ------ | ---------- | -------------- |
+| T-17 | Score and show only server-generated photo paths | done   | inline | none       | 1              |
+
+Concurrency cap: 3
+
+Out of scope: signed review images in the organizer app (#59), HEIC MIME in
+scoring (#61), other submission hardening (#58).
+
+Decisions log:
+
+- 2026-10-07: T-17 accepted in one round; code review and security audit found
+  no blockers. The organizer review sanitizer fails closed (a non-dict joined
+  `submission` becomes `null`). `score_submission` still trusts its caller to
+  pass `team_id`, `task_id` and `photo_path` from the same row (documented in its
+  docstring; every current call site does). Not fixed: a legacy photo or combo
+  row whose path is dropped is scored on text alone, so an exact-match answer
+  can auto-approve it without a valid photo. Live audit found no such rows.
+
+- 2026-10-07: Live audit on #68 found no row pointing outside its own team
+  folder, so this is defense in depth. No data migration; rows that fail the
+  check are scored as photo-less and their path is hidden from organizers.
+
+---
+
+## Previous board: Team isolation (issue #55), done
 
 | ID   | Title                                        | Status | Mode   | Depends on      | Parallel group |
 | ---- | -------------------------------------------- | ------ | ------ | --------------- | -------------- |

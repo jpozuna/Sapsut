@@ -2,6 +2,8 @@ import pytest
 
 from services import scoring
 
+TEAM_ID = "22222222-2222-2222-2222-222222222222"
+TASK_ID = "44444444-4444-4444-4444-444444444444"
 
 def test_threshold_default_is_one(monkeypatch):
     monkeypatch.delenv("AUTO_APPROVE_CONFIDENCE_THRESHOLD", raising=False)
@@ -136,7 +138,7 @@ async def test_score_submission_idempotent(monkeypatch):
     monkeypatch.setattr(scoring, "get_supabase", lambda: fake)
 
     # If it doesn't early return, it will try to build clients and/or query tasks and the fake will explode.
-    await scoring.score_submission("sub1", "task1", "team1", "hello", None)
+    await scoring.score_submission("sub1", TASK_ID, TEAM_ID, "hello", None)
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +146,8 @@ async def test_score_submission_idempotent(monkeypatch):
 # ---------------------------------------------------------------------------
 
 SENTINEL = "SENTINEL-secret-error-text"
-PHOTO_PATH = "team1/task1/SENTINEL-photo-path.jpg"
+OTHER_ID = "33333333-3333-3333-3333-333333333333"
+PHOTO_PATH = f"{TEAM_ID}/{TASK_ID}/55555555-5555-4555-8555-555555555555.jpg"
 
 
 class _Query:
@@ -269,7 +272,7 @@ async def test_storage_download_failure_is_sanitized(monkeypatch, caplog):
     supa = _RecordingSupabase(download_exc=RuntimeError(f"{SENTINEL} {PHOTO_PATH}"))
     _patch(monkeypatch, supa)
     with caplog.at_level("ERROR"):
-        await scoring.score_submission("sub1", "task1", "team1", None, PHOTO_PATH)
+        await scoring.score_submission("sub1", TASK_ID, TEAM_ID, None, PHOTO_PATH)
     _assert_no_leak(supa.submission_updates(), "storage_download", "error")
     assert any(r.exc_info and SENTINEL in str(r.exc_info[1]) for r in caplog.records)
 
@@ -278,7 +281,7 @@ async def test_storage_download_failure_is_sanitized(monkeypatch, caplog):
 async def test_image_description_failure_is_sanitized(monkeypatch):
     supa = _RecordingSupabase()
     _patch(monkeypatch, supa, openai_client=_FakeOpenAI(describe_exc=True))
-    await scoring.score_submission("sub1", "task1", "team1", None, PHOTO_PATH)
+    await scoring.score_submission("sub1", TASK_ID, TEAM_ID, None, PHOTO_PATH)
     _assert_no_leak(supa.submission_updates(), "gpt4o_describe", "error")
 
 
@@ -286,7 +289,7 @@ async def test_image_description_failure_is_sanitized(monkeypatch):
 async def test_embedding_failure_is_sanitized(monkeypatch):
     supa = _RecordingSupabase()
     _patch(monkeypatch, supa, openai_client=_FakeOpenAI(embed_exc=True))
-    await scoring.score_submission("sub1", "task1", "team1", "some answer", None)
+    await scoring.score_submission("sub1", TASK_ID, TEAM_ID, "some answer", None)
     _assert_no_leak(supa.submission_updates(), "embed_submission", "error")
 
 
@@ -299,7 +302,7 @@ async def test_invalid_json_is_sanitized(monkeypatch):
         raise ValueError(f"{SENTINEL} {PHOTO_PATH}")
 
     monkeypatch.setattr(scoring, "_parse_score_json", _bad_parse)
-    await scoring.score_submission("sub1", "task1", "team1", "some answer", None)
+    await scoring.score_submission("sub1", TASK_ID, TEAM_ID, "some answer", None)
     updates = supa.submission_updates()
     _assert_no_leak(updates, "invalid_json", "flagged")
     # Behaviour preserved: still flagged with no score.
@@ -311,7 +314,7 @@ async def test_generic_exception_is_sanitized(monkeypatch, caplog):
     supa = _RecordingSupabase()
     _patch(monkeypatch, supa, anthropic_client=_FakeAnthropic(exc=True))
     with caplog.at_level("ERROR"):
-        await scoring.score_submission("sub1", "task1", "team1", "some answer", None)
+        await scoring.score_submission("sub1", TASK_ID, TEAM_ID, "some answer", None)
     _assert_no_leak(supa.submission_updates(), "exception", "error")
     assert any(r.exc_info and SENTINEL in str(r.exc_info[1]) for r in caplog.records)
 
@@ -321,7 +324,7 @@ async def test_invalid_json_with_real_parser_is_sanitized(monkeypatch, caplog):
     supa = _RecordingSupabase()
     _patch(monkeypatch, supa, anthropic_client=_FakeAnthropic(text="definitely not json"))
     with caplog.at_level("ERROR"):
-        await scoring.score_submission("sub1", "task1", "team1", "some answer", None)
+        await scoring.score_submission("sub1", TASK_ID, TEAM_ID, "some answer", None)
     updates = supa.submission_updates()
     _assert_no_leak(updates, "invalid_json", "flagged")
     assert updates[0]["score"] is None
@@ -356,7 +359,7 @@ async def test_failure_stage_logs_exception_and_prints_nothing(monkeypatch, capl
         args = ("some answer", None)
 
     with caplog.at_level("ERROR"):
-        await scoring.score_submission("sub1", "task1", "team1", *args)
+        await scoring.score_submission("sub1", TASK_ID, TEAM_ID, *args)
 
     # Real exception goes to logging with traceback.
     assert any(
@@ -380,6 +383,94 @@ async def test_failure_recording_error_is_logged_not_raised(monkeypatch, caplog)
 
     monkeypatch.setattr(scoring, "_mark_submission_error", _boom)
     with caplog.at_level("ERROR"):
-        await scoring.score_submission("sub1", "task1", "team1", "some answer", None)
+        await scoring.score_submission("sub1", TASK_ID, TEAM_ID, "some answer", None)
     assert any("Failed to record scoring error" in r.getMessage() for r in caplog.records)
     assert supa.submission_updates() == []
+
+
+# ---------------------------------------------------------------------------
+# Only server-generated photo paths for the submission's own team and task are
+# downloaded or sent to a model.
+# ---------------------------------------------------------------------------
+
+
+class _CountingStorage(_FakeStorage):
+    def __init__(self):
+        super().__init__()
+        self.downloads = []
+
+    def download(self, path):
+        self.downloads.append(path)
+        return super().download(path)
+
+
+class _CountingOpenAI(_FakeOpenAI):
+    def __init__(self):
+        super().__init__()
+        self.vision_calls = 0
+        outer = self
+        inner = self.chat.completions.create
+
+        def create(**kw):
+            outer.vision_calls += 1
+            return inner(**kw)
+
+        self.chat = type("Chat", (), {"completions": type("Comp", (), {"create": staticmethod(create)})()})()
+
+
+FILE = "55555555-5555-4555-8555-555555555555.png"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        f"{OTHER_ID}/{TASK_ID}/{FILE}",  # another team's folder
+        f"{TEAM_ID}/{OTHER_ID}/{FILE}",  # another task's folder
+        f"{TEAM_ID}/{TASK_ID}/../{OTHER_ID}/{TASK_ID}/{FILE}",  # traversal
+        f"{TEAM_ID}/{TASK_ID}/stolen.png",  # not a UUID filename
+        "somewhere/else.png",
+    ],
+)
+async def test_foreign_photo_path_is_not_downloaded_or_described(monkeypatch, caplog, bad_path):
+    supa = _RecordingSupabase()
+    supa.storage = _CountingStorage()
+    openai_client = _CountingOpenAI()
+    _patch(monkeypatch, supa, openai_client=openai_client)
+    with caplog.at_level("WARNING"):
+        await scoring.score_submission("sub1", TASK_ID, TEAM_ID, "some answer", bad_path)
+    assert supa.storage.downloads == []
+    assert openai_client.vision_calls == 0
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("sub1" in r.getMessage() for r in warnings)
+    assert all(bad_path not in r.getMessage() for r in caplog.records)
+    # Scored as a text-only submission: Claude saw the text, not a photo description.
+    updates = supa.submission_updates()
+    assert len(updates) == 1
+    assert updates[0]["gpt4o_description"] is None
+
+
+@pytest.mark.asyncio
+async def test_foreign_photo_path_without_text_is_an_empty_submission(monkeypatch):
+    supa = _RecordingSupabase()
+    supa.storage = _CountingStorage()
+    openai_client = _CountingOpenAI()
+    _patch(monkeypatch, supa, openai_client=openai_client)
+    await scoring.score_submission("sub1", TASK_ID, TEAM_ID, None, f"{OTHER_ID}/{TASK_ID}/{FILE}")
+    assert supa.storage.downloads == []
+    assert openai_client.vision_calls == 0
+    updates = supa.submission_updates()
+    assert len(updates) == 1
+    assert updates[0]["ai_result"]["mode"] == "empty_submission"
+
+
+@pytest.mark.asyncio
+async def test_own_photo_path_is_downloaded_and_described(monkeypatch):
+    supa = _RecordingSupabase()
+    supa.storage = _CountingStorage()
+    openai_client = _CountingOpenAI()
+    _patch(monkeypatch, supa, openai_client=openai_client)
+    own = f"{TEAM_ID}/{TASK_ID}/{FILE}"
+    await scoring.score_submission("sub1", TASK_ID, TEAM_ID, None, own)
+    assert supa.storage.downloads == [own]
+    assert openai_client.vision_calls == 1

@@ -1,5 +1,4 @@
 import logging
-import re
 import uuid
 
 import anyio
@@ -12,9 +11,10 @@ from postgrest.exceptions import APIError
 from auth.organizer import require_organizer
 from auth.team import canonical_team_id, require_team
 from services import get_supabase
+from services.photo_paths import server_photo_path
 from services.scoring import score_submission
 from services.storage import storage_bucket
-from services.uploads import ALLOWED_IMAGE_TYPES, read_validated_image
+from services.uploads import read_validated_image
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +83,6 @@ def _participant_view(row: Dict[str, Any]) -> Dict[str, Any]:
 
 _TEAM_MISMATCH_DETAIL = "Team mismatch."
 
-_UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-# Uploads before T-07 stored JPEGs as ".jpeg"; those rows are still server-generated.
-_LEGACY_PHOTO_EXTENSIONS = {"jpeg"}
-_PHOTO_EXTENSIONS = "|".join(
-    sorted(re.escape(e) for e in set(ALLOWED_IMAGE_TYPES.values()) | _LEGACY_PHOTO_EXTENSIONS)
-)
-
 
 def _check_team_param(supplied: Optional[str], token_team_id: str) -> None:
     """403 if the client sent a team_id that is not the token's team."""
@@ -97,23 +90,6 @@ def _check_team_param(supplied: Optional[str], token_team_id: str) -> None:
         return
     if canonical_team_id(supplied) != token_team_id:
         raise HTTPException(status_code=403, detail=_TEAM_MISMATCH_DETAIL)
-
-
-def _signable_photo_path(row: Dict[str, Any]) -> Optional[str]:
-    """The row's photo path if the server could have generated it, else None.
-
-    Only `{team_id}/{task_id}/<uuid>.<ext>` built from the row's own ids is signed.
-    Older rows written through the removed `photo_path` field can hold any path.
-    """
-    path = row.get("photo_url")
-    if not isinstance(path, str) or not path:
-        return None
-    team = canonical_team_id(row.get("team_id"))
-    task = canonical_team_id(row.get("task_id"))
-    if team is None or task is None:
-        return None
-    pattern = f"{re.escape(team)}/{re.escape(task)}/{_UUID_PATTERN}\\.(?:{_PHOTO_EXTENSIONS})"
-    return path if re.fullmatch(pattern, path) else None
 
 
 @router.get("/{id}")
@@ -138,7 +114,7 @@ async def get_submission(id: str, team_id: str = Depends(require_team)) -> Dict[
     row: Dict[str, Any] = rows[0]
     submission = _participant_view(row)
 
-    photo_path = _signable_photo_path(row)
+    photo_path = server_photo_path(row.get("photo_url"), row.get("team_id"), row.get("task_id"))
     if photo_path:
         try:
             signed = await anyio.to_thread.run_sync(
