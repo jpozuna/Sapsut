@@ -1,21 +1,55 @@
 from __future__ import annotations
 
 import base64
-import mimetypes
+import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 import anyio
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from auth.organizer import require_organizer
+from auth.organizer import (
+    CODE_REQUIRED_DETAIL,
+    format_expiry,
+    issue_session_token,
+    require_organizer,
+)
 from services import get_supabase
 from services.scoring import _get_openai_client, score_submission, _finalize_score
 from services.storage import storage_bucket
+from services.uploads import read_validated_image
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_organizer)])
+
+
+@router.post("/session")
+def create_organizer_session(request: Request) -> Dict[str, str]:
+    """Exchange a valid X-Organizer-Code for a 24h signed session token.
+
+    The router guard has already validated (and rate limited) the credentials. A
+    session token cannot be used to mint another one, so a leaked token can't be
+    extended; only the code can.
+    """
+    if getattr(request.state, "organizer_auth", None) != "code":
+        raise HTTPException(status_code=401, detail=CODE_REQUIRED_DETAIL)
+    code = (os.getenv("ORGANIZER_DEMO_CODE") or "").strip()
+    token, expires_at = issue_session_token(code)
+    return {"token": token, "expires_at": format_expiry(expires_at)}
+
+
+@router.get("/session")
+def organizer_session(request: Request) -> Dict[str, Any]:
+    """Verify a session token or organizer code. The router guard returns 401 if bad."""
+    expires_at = getattr(request.state, "organizer_expires_at", None)
+    return {
+        "ok": True,
+        "expires_at": format_expiry(expires_at) if expires_at is not None else None,
+    }
 
 
 @router.get("/review-queue")
@@ -92,8 +126,9 @@ def organizer_create_task(task: OrganizerTaskCreateIn) -> Any:
     payload = task.model_dump(exclude_none=True)
     try:
         return supabase.table("tasks").insert(payload).execute().data
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Failed to create task")
+        raise HTTPException(status_code=400, detail="Failed to create task")
 
 
 @router.get("/tasks/{task_id}")
@@ -101,8 +136,9 @@ def organizer_get_task(task_id: str) -> Any:
     supabase = get_supabase()
     try:
         return supabase.table("tasks").select("*").eq("id", task_id).single().execute().data
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        logger.exception("Failed to load task %s", task_id)
+        raise HTTPException(status_code=404, detail="Task not found")
 
 
 @router.put("/tasks/{task_id}")
@@ -111,15 +147,9 @@ def organizer_update_task(task_id: str, task: OrganizerTaskCreateIn) -> Any:
     payload = task.model_dump(exclude_none=True)
     try:
         return supabase.table("tasks").update(payload).eq("id", task_id).execute().data
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-def _mime_type_from_filename(filename: str) -> str:
-    mt, _ = mimetypes.guess_type(filename or "")
-    if mt and mt.startswith("image/"):
-        return mt
-    return "image/jpeg"
+    except Exception:
+        logger.exception("Failed to update task %s", task_id)
+        raise HTTPException(status_code=400, detail="Failed to update task")
 
 
 class RubricOcrOut(BaseModel):
@@ -135,16 +165,11 @@ async def ocr_rubric_image(task_id: str, image: UploadFile = File(...)) -> Rubri
     except Exception:
         raise HTTPException(status_code=400, detail="task_id must be a UUID")
 
-    img_bytes = await image.read()
-    if not img_bytes:
-        raise HTTPException(status_code=400, detail="Missing image bytes")
+    # Type (415) and size (413) are checked before OCR; reads at most 10 MB + 1 byte.
+    validated = await read_validated_image(image)
 
-    # Basic size guard (10MB) for OCR requests; can be adjusted.
-    if len(img_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Rubric image must be <= 10 MB.")
-
-    b64 = base64.b64encode(img_bytes).decode("utf-8")
-    image_mime = _mime_type_from_filename(image.filename or "")
+    b64 = base64.b64encode(validated.data).decode("utf-8")
+    image_mime = validated.content_type
 
     try:
         openai_client = _get_openai_client()
@@ -167,8 +192,9 @@ async def ocr_rubric_image(task_id: str, image: UploadFile = File(...)) -> Rubri
             ],
         )
         text = (resp.choices[0].message.content or "").strip()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"OCR failed: {e}")
+    except Exception:
+        logger.exception("Rubric OCR failed for task %s", task_id)
+        raise HTTPException(status_code=400, detail="OCR failed")
 
     # Heuristic: split into criteria lines.
     lines = [ln.strip(" \t-•*") for ln in text.splitlines()]
@@ -203,31 +229,31 @@ async def upload_task_photo(task_id: str, photo: UploadFile = File(...)) -> Dict
     except Exception:
         raise HTTPException(status_code=400, detail="task_id must be a UUID")
 
-    photo_bytes = await photo.read()
-    if not photo_bytes:
-        raise HTTPException(status_code=400, detail="Missing photo bytes")
-
-    content_type = (photo.content_type or "application/octet-stream").strip()
-    ext = (content_type.split("/")[-1] if "/" in content_type else "bin") or "bin"
+    # Type (415) and size (413) are checked before anything is stored.
+    validated = await read_validated_image(photo)
+    photo_bytes = validated.data
+    content_type = validated.content_type
     photo_id = str(uuid.uuid4())
-    stored_path = f"tasks/{task_id}/{photo_id}.{ext}"
+    stored_path = f"tasks/{task_id}/{photo_id}.{validated.ext}"
 
     try:
         await anyio.to_thread.run_sync(
             lambda: supabase.storage.from_(storage_bucket()).upload(
                 stored_path,
                 photo_bytes,
-                file_options={"content-type": content_type, "upsert": "true"},
+                file_options={"content-type": content_type},
             )
         )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Photo upload failed: {e}")
+    except Exception:
+        logger.exception("Photo upload failed for task %s", task_id)
+        raise HTTPException(status_code=400, detail="Photo upload failed")
 
     row = {"id": photo_id, "task_id": task_id, "path": stored_path}
     try:
         inserted = supabase.table("task_photos").insert(row).execute().data
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to record task photo: {e}")
+    except Exception:
+        logger.exception("Failed to record task photo for task %s", task_id)
+        raise HTTPException(status_code=400, detail="Failed to record task photo")
 
     return {"task_id": task_id, "photo": (inserted[0] if inserted else row)}
 
@@ -289,7 +315,7 @@ def _get_submission_or_404(submission_id: str) -> Dict[str, Any]:
     supabase = get_supabase()
     row = (
         supabase.table("submissions")
-        .select("id,team_id,status,score")
+        .select("id,task_id,team_id,status,score")
         .eq("id", submission_id)
         .maybe_single()
         .execute()
@@ -350,6 +376,23 @@ def override_review_queue_item(queue_id: str, payload: OverrideIn) -> Dict[str, 
     supabase = get_supabase()
     queue_row = _get_queue_row_or_404(queue_id)
     submission = _get_submission_or_404(queue_row["submission_id"])
+
+    task = (
+        supabase.table("tasks")
+        .select("id,max_points")
+        .eq("id", submission.get("task_id"))
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    max_points = int(task.get("max_points") or 0)
+    if int(payload.score) > max_points:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Score cannot exceed the task's maximum of {max_points} points.",
+        )
 
     rationale = (payload.rationale or "").strip() or "Organizer override"
 
@@ -540,7 +583,8 @@ def replace_task_criteria(task_id: str, payload: CriteriaUpdateIn) -> Dict[str, 
     try:
         supabase.table("task_criteria").delete().eq("task_id", task_id).execute()
     except Exception:
-        # If delete isn't supported / table missing, surface a useful error.
+        # If delete isn't supported / table missing, surface a generic error.
+        logger.exception("Failed to clear criteria for task %s", task_id)
         raise HTTPException(status_code=400, detail="Failed to clear existing criteria for task")
 
     rows: List[Dict[str, Any]] = [
@@ -548,8 +592,9 @@ def replace_task_criteria(task_id: str, payload: CriteriaUpdateIn) -> Dict[str, 
     ]
     try:
         inserted = supabase.table("task_criteria").insert(rows).execute().data or []
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Failed to insert criteria for task %s", task_id)
+        raise HTTPException(status_code=400, detail="Failed to save task criteria")
 
     return {"task_id": task_id, "inserted": inserted}
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import math
 import os
 import mimetypes
@@ -14,6 +15,8 @@ import openai
 
 from services import get_supabase
 from services.storage import storage_bucket
+
+logger = logging.getLogger(__name__)
 
 
 def _get_openai_client() -> openai.OpenAI:
@@ -174,12 +177,13 @@ async def score_submission(
                 photo_bytes = await anyio.to_thread.run_sync(
                     lambda: supabase.storage.from_(storage_bucket()).download(photo_path)
                 )
-            except Exception as e:
+            except Exception:
+                logger.exception("Storage download failed for submission %s", submission_id)
                 _mark_submission_error(
                     supabase,
                     submission_id,
-                    f"Storage download failed for photo_path={photo_path}: {e}",
-                    ai_result={"mode": "storage_download", "photo_path": photo_path, "error": str(e)},
+                    "Photo could not be read",
+                    ai_result={"mode": "storage_download", "error": "Photo could not be read"},
                 )
                 return
 
@@ -199,12 +203,13 @@ async def score_submission(
                     ],
                 )
                 gpt4o_description = response.choices[0].message.content
-            except Exception as e:
+            except Exception:
+                logger.exception("Image description failed for submission %s", submission_id)
                 _mark_submission_error(
                     supabase,
                     submission_id,
-                    f"GPT-4o image description failed: {e}",
-                    ai_result={"mode": "gpt4o_describe", "error": str(e)},
+                    "Photo could not be analyzed",
+                    ai_result={"mode": "gpt4o_describe", "error": "Photo could not be analyzed"},
                 )
                 return
 
@@ -251,12 +256,13 @@ async def score_submission(
         if submission_text.strip():
             try:
                 submission_embedding = _embed_text(openai_client, submission_text)
-            except Exception as e:
+            except Exception:
+                logger.exception("Embedding call failed for submission %s", submission_id)
                 _mark_submission_error(
                     supabase,
                     submission_id,
-                    f"Embedding call failed: {e}",
-                    ai_result={"mode": "embed_submission", "error": str(e)},
+                    "Scoring failed",
+                    ai_result={"mode": "embed_submission", "error": "Scoring failed"},
                 )
                 return
 
@@ -332,18 +338,20 @@ Score this submission. Return JSON only:
         raw_text = message.content[0].text if message.content else ""
         try:
             parsed = _parse_score_json(raw_text, max_points=max_points)
-        except Exception as e:
+        except Exception:
             # Can't parse: send to review (with explanation)
+            logger.exception("Scoring output was invalid for submission %s", submission_id)
             supabase.table("submissions").update(
                 {
                     "status": "flagged",
                     "score": None,
                     "confidence": None,
-                    "rationale": f"Scoring output was invalid JSON: {e}",
+                    "rationale": "Scoring output was invalid",
                     "gpt4o_description": gpt4o_description,
                     "ai_result": {
+                        "mode": "invalid_json",
                         "raw_text": raw_text,
-                        "error": str(e),
+                        "error": "Scoring output was invalid",
                         "retrieved_criteria": retrieved_criteria,
                     },
                 }
@@ -417,18 +425,18 @@ Score this submission. Return JSON only:
             except Exception:
                 pass
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Scoring error for submission %s", submission_id)
         try:
             supabase = get_supabase()
             _mark_submission_error(
                 supabase,
                 submission_id,
-                f"Scoring exception: {e}",
-                ai_result={"mode": "exception", "error": str(e)},
+                "Scoring failed",
+                ai_result={"mode": "exception", "error": "Scoring failed"},
             )
         except Exception:
-            pass
-        print(f"Scoring error: {e}")
+            logger.exception("Failed to record scoring error for submission %s", submission_id)
 
 
 def _finalize_score(

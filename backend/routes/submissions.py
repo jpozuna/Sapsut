@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 import anyio
@@ -11,6 +12,9 @@ from auth.organizer import require_organizer
 from services import get_supabase
 from services.scoring import score_submission
 from services.storage import storage_bucket
+from services.uploads import read_validated_image
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -34,14 +38,53 @@ def _extract_signed_url(resp: Any) -> Optional[str]:
     return None
 
 
+# Participant-visible columns. Everything else on the row (ai_result, confidence,
+# gpt4o_description, raw photo_url) stays server-side: it can include the expected
+# answer or scoring criteria. Organizer routes return the full row separately.
+_PARTICIPANT_FIELDS = (
+    "id",
+    "task_id",
+    "team_id",
+    "text_answer",
+    "status",
+    "score",
+    "rationale",
+    "created_at",
+)
+_PARTICIPANT_COLUMNS = ",".join(_PARTICIPANT_FIELDS)
+
+# `rationale` is free model text produced from a prompt that contains every
+# criterion for the task, so it can quote the expected answer. Participants get a
+# fixed message per status instead; the stored rationale is untouched.
+_PARTICIPANT_RATIONALE = {
+    "approved": "Your submission was approved.",
+    "auto_approved": "Your submission was approved.",
+    "reviewed": "An organizer reviewed your submission.",
+    "flagged": "Your submission is awaiting organizer review.",
+    "error": "Please try again.",
+}
+
+
+# Scores are shown only once final. A flagged score is an unreviewed model score,
+# and showing it would let a team probe the rubric by resubmitting variants.
+_PARTICIPANT_SCORED_STATUSES = {"approved", "auto_approved", "reviewed"}
+
+
+def _participant_view(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = {k: row.get(k) for k in _PARTICIPANT_FIELDS}
+    status = str(row.get("status") or "").strip().lower()
+    out["rationale"] = _PARTICIPANT_RATIONALE.get(status)
+    if status not in _PARTICIPANT_SCORED_STATUSES:
+        out["score"] = None
+    return out
+
+
 @router.get("/{id}")
 async def get_submission(id: str) -> Dict[str, Any]:
     supabase = get_supabase()
     rows = (
         supabase.table("submissions")
-        .select(
-            "id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,ai_result,created_at"
-        )
+        .select(f"{_PARTICIPANT_COLUMNS},photo_url")
         .eq("id", id)
         .limit(1)
         .execute()
@@ -49,9 +92,10 @@ async def get_submission(id: str) -> Dict[str, Any]:
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Submission not found")
-    submission: Dict[str, Any] = rows[0]
+    row: Dict[str, Any] = rows[0]
+    submission = _participant_view(row)
 
-    photo_path = submission.get("photo_url")
+    photo_path = row.get("photo_url")
     if photo_path:
         try:
             signed = await anyio.to_thread.run_sync(
@@ -74,15 +118,13 @@ def list_submissions(
     supabase = get_supabase()
     q = (
         supabase.table("submissions")
-        .select(
-            "id,task_id,team_id,text_answer,photo_url,status,score,confidence,rationale,gpt4o_description,ai_result,created_at"
-        )
+        .select(_PARTICIPANT_COLUMNS)
         .eq("team_id", team_id)
         .order("created_at", desc=True)
     )
     if task_id:
         q = q.eq("task_id", task_id)
-    return q.execute().data or []
+    return [_participant_view(r) for r in (q.execute().data or [])]
 
 
 @router.post("/")
@@ -130,6 +172,8 @@ async def create_submission(
             .select("id")
             .eq("task_id", task_id)
             .eq("team_id", team_id)
+            # A failed upload leaves an error row; it must not block a retry.
+            .neq("status", "error")
             .limit(1)
             .execute()
             .data
@@ -161,10 +205,11 @@ async def create_submission(
     stored_photo_path = normalized_photo_path
     if (stored_photo_path is None) and (photo is not None):
         # Important: read and upload during the request lifecycle.
-        photo_bytes = await photo.read()
-        content_type = (photo.content_type or "application/octet-stream").strip()
-        ext = (content_type.split("/")[-1] if "/" in content_type else "bin") or "bin"
-        stored_photo_path = f"{team_id}/{task_id}/{submission_id}.{ext}"
+        # Validates type (415) and size (413) before anything is stored or inserted.
+        validated = await read_validated_image(photo)
+        photo_bytes = validated.data
+        content_type = validated.content_type
+        stored_photo_path = f"{team_id}/{task_id}/{submission_id}.{validated.ext}"
         try:
             # Supabase Storage upload is synchronous; offload to worker thread.
             await anyio.to_thread.run_sync(
@@ -172,11 +217,12 @@ async def create_submission(
                     stored_photo_path,
                     photo_bytes,
                     # supabase-py passes these through to HTTP headers; values must be strings.
-                    file_options={"content-type": content_type, "upsert": "true"},
+                    file_options={"content-type": content_type},
                 )
             )
-        except Exception as e:
+        except Exception:
             # If photo upload fails, record error immediately and avoid enqueueing scoring.
+            logger.exception("Photo upload failed for submission %s", submission_id)
             submission = {
                 "id": submission_id,
                 "task_id": task_id,
@@ -184,14 +230,14 @@ async def create_submission(
                 "text_answer": normalized_text_answer,
                 "photo_url": None,
                 "status": "error",
-                "rationale": f"Photo upload failed: {e}",
-                "ai_result": {"mode": "storage_upload", "error": str(e)},
+                "rationale": "Photo upload failed",
+                "ai_result": {"mode": "storage_upload", "error": "Photo upload failed"},
             }
             try:
                 supabase.table("submissions").insert(submission).execute()
             except Exception:
                 # Don't mask the storage error with a DB insert failure.
-                pass
+                logger.exception("Failed to record upload-error submission %s", submission_id)
             return {"submission_id": submission_id, "status": "error"}
 
     submission = {
@@ -205,14 +251,10 @@ async def create_submission(
     }
     try:
         supabase.table("submissions").insert(submission).execute()
-    except APIError as e:
-        # Convert common PostgREST errors into a client-friendly 4xx.
-        msg = ""
-        try:
-            msg = (e.args[0] or {}).get("message") or ""
-        except Exception:
-            msg = ""
-        raise HTTPException(status_code=400, detail=msg or "Invalid submission payload")
+    except APIError:
+        # Convert PostgREST errors into a client-friendly 4xx without leaking DB details.
+        logger.exception("Submission insert failed for submission %s", submission_id)
+        raise HTTPException(status_code=400, detail="Invalid submission payload")
     
     background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, stored_photo_path, False)
     

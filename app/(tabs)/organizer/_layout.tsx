@@ -14,5 +14,12 @@ export default function OrganizerTabLayout() {
   if (role !== 'organizer') return <Redirect href="/(tabs)" />;
 
   // Keep bottom tabs visible; suppress native headers.
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="create-task" />
+      <Stack.Screen name="review" />
+      <Stack.Screen name="history" />
+    </Stack>
+  );
 }

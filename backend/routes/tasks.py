@@ -1,40 +1,31 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter
 
 from services import get_supabase
 
 router = APIRouter()
 
-
-class TaskCreate(BaseModel):
-    title: str = Field(min_length=1)
-    description: Optional[str] = None
-    type: Literal["text", "photo", "combo"]
-    max_points: int = Field(ge=0)
-    rubric: Optional[dict] = None
-    is_active: bool = True
-    opens_at: Optional[datetime] = None
-    closes_at: Optional[datetime] = None
-    allow_multiple_submissions: Optional[bool] = None
+# Public task columns. `rubric` stays server-side: it can hold grading criteria.
+# Organizer routes read the full task separately.
+_PUBLIC_TASK_FIELDS = (
+    "id",
+    "title",
+    "description",
+    "type",
+    "max_points",
+    "is_active",
+    "opens_at",
+    "closes_at",
+    "allow_multiple_submissions",
+    "created_at",
+)
 
 
 @router.get("/")
-def list_tasks():
+def list_tasks() -> List[Dict[str, Any]]:
     supabase = get_supabase()
-    return supabase.table("tasks").select("*").execute().data
-
-
-@router.post("/")
-def create_task(task: TaskCreate):
-    supabase = get_supabase()
-    payload = task.model_dump(exclude_none=True)
-    try:
-        return supabase.table("tasks").insert(payload).execute().data
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+    rows = supabase.table("tasks").select(",".join(_PUBLIC_TASK_FIELDS)).execute().data or []
+    return [{k: row.get(k) for k in _PUBLIC_TASK_FIELDS} for row in rows]

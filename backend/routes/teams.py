@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from typing import Any, Optional
 
@@ -7,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from services import get_supabase
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -50,12 +53,11 @@ def create_team(payload: TeamCreateIn) -> Any:
             last_exc = e
             if _is_invite_code_unique_violation(e):
                 continue
-            raise HTTPException(status_code=400, detail=str(e))
+            logger.exception("Failed to create team")
+            raise HTTPException(status_code=400, detail="Failed to create team")
 
-    raise HTTPException(
-        status_code=500,
-        detail=f"Failed to generate unique invite_code: {last_exc}",
-    )
+    logger.error("Failed to generate unique invite_code after retries: %s", last_exc)
+    raise HTTPException(status_code=500, detail="Failed to create team")
 
 
 @router.get("/{id}")
