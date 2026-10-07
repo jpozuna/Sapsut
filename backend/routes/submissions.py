@@ -84,7 +84,11 @@ def _participant_view(row: Dict[str, Any]) -> Dict[str, Any]:
 _TEAM_MISMATCH_DETAIL = "Team mismatch."
 
 _UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-_PHOTO_EXTENSIONS = "|".join(sorted(re.escape(e) for e in set(ALLOWED_IMAGE_TYPES.values())))
+# Uploads before T-07 stored JPEGs as ".jpeg"; those rows are still server-generated.
+_LEGACY_PHOTO_EXTENSIONS = {"jpeg"}
+_PHOTO_EXTENSIONS = "|".join(
+    sorted(re.escape(e) for e in set(ALLOWED_IMAGE_TYPES.values()) | _LEGACY_PHOTO_EXTENSIONS)
+)
 
 
 def _check_team_param(supplied: Optional[str], token_team_id: str) -> None:

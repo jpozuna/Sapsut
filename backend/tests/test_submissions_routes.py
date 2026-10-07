@@ -567,7 +567,7 @@ def test_get_submission_withholds_signed_url_for_unexpected_path(app_and_client,
     assert all(OTHER_TEAM_ID not in w for w in warnings)
 
 
-@pytest.mark.parametrize("ext", ["jpg", "png", "webp", "heic", "heif"])
+@pytest.mark.parametrize("ext", ["jpg", "jpeg", "png", "webp", "heic", "heif"])
 def test_get_submission_signs_every_allowed_extension(app_and_client, ext):
     fake, client = app_and_client
     path = f"{TEAM_ID}/{TASK_ID}/{SUB1}.{ext}"
