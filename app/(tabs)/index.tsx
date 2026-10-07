@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AccessibilityInfo,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -7,6 +13,7 @@ import { EmptyState } from '@/components/empty-state';
 import { SafeScreen, TAB_BAR_CLEARANCE } from '@/components/safe-screen';
 import { ScreenState } from '@/components/screen-state';
 import { SapsutLogo } from '@/components/sapsut-logo';
+import { TaskSortBar } from '@/components/task-sort-bar';
 import {
   AppCard,
   AppChip,
@@ -19,6 +26,13 @@ import { Radius, Spacing } from '@/constants/theme';
 import { apiUrl } from '@/lib/api';
 import { httpJson } from '@/lib/http';
 import { useRole } from '@/lib/role-context';
+import {
+  DEFAULT_TASK_SORT,
+  isSameSort,
+  sortTasks,
+  TASK_SORT_OPTIONS,
+  type TaskSort,
+} from '@/lib/task-sort';
 import { getSavedTeamId } from '@/lib/team-session';
 import { useAppTheme } from '@/lib/ui';
 
@@ -45,6 +59,12 @@ const NEW_WINDOW_MS = 24 * 60 * 60 * 1000;
 function normalizeStatus(raw: unknown): string {
   const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
   return s || 'pending';
+}
+
+function isCompletedStatus(status: string | null | undefined): boolean {
+  return (
+    status === 'auto_approved' || status === 'approved' || status === 'reviewed'
+  );
 }
 
 function isTaskOpenNow(task: Task, nowMs: number): boolean {
@@ -80,6 +100,8 @@ export default function TaskListScreen() {
   const [taskSubmissionByTaskId, setTaskSubmissionByTaskId] = useState<
     Record<string, { id: string; status: string }>
   >({});
+  const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
+  const listRef = useRef<FlatList<Task>>(null);
 
   const fetchTasks = useCallback(async () => {
     setError(undefined);
@@ -179,25 +201,38 @@ export default function TaskListScreen() {
     );
   }, [tasks]);
 
+  const sortedTasks = useMemo(() => {
+    // 0 = not submitted, 1 = submitted / in review, 2 = completed.
+    const statusRank = (t: Task) => {
+      const submission = taskSubmissionByTaskId[String(t.id)];
+      if (!submission) return 0;
+      return isCompletedStatus(submission.status) ? 2 : 1;
+    };
+    // Organizers have no submissions, so a status sort carried over from
+    // participant mode would silently mis-order the list.
+    const effectiveSort =
+      role === 'organizer' && sort.key === 'status' ? DEFAULT_TASK_SORT : sort;
+    return sortTasks(activeTasks, effectiveSort, statusRank);
+  }, [activeTasks, role, sort, taskSubmissionByTaskId]);
+
+  const onSortChange = useCallback((next: TaskSort) => {
+    setSort(next);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    const label = TASK_SORT_OPTIONS.find((o) => isSameSort(o, next))?.label;
+    if (label) AccessibilityInfo.announceForAccessibility(`Sorted by ${label}`);
+  }, []);
+
   const completedCount = useMemo(() => {
     return activeTasks.reduce((acc, t) => {
       const status = taskSubmissionByTaskId[String(t.id)]?.status;
-      const done =
-        status === 'auto_approved' ||
-        status === 'approved' ||
-        status === 'reviewed';
-      return acc + (done ? 1 : 0);
+      return acc + (isCompletedStatus(status) ? 1 : 0);
     }, 0);
   }, [activeTasks, taskSubmissionByTaskId]);
 
   const earnedPoints = useMemo(() => {
     return activeTasks.reduce((acc, t) => {
       const status = taskSubmissionByTaskId[String(t.id)]?.status;
-      const done =
-        status === 'auto_approved' ||
-        status === 'approved' ||
-        status === 'reviewed';
-      return acc + (done ? Number(t.max_points) || 0 : 0);
+      return acc + (isCompletedStatus(status) ? Number(t.max_points) || 0 : 0);
     }, 0);
   }, [activeTasks, taskSubmissionByTaskId]);
 
@@ -261,8 +296,17 @@ export default function TaskListScreen() {
           </View>
         ) : null}
 
+        {total > 1 ? (
+          <TaskSortBar
+            value={sort}
+            onChange={onSortChange}
+            showStatus={isParticipant}
+          />
+        ) : null}
+
         <FlatList
-          data={activeTasks}
+          ref={listRef}
+          data={sortedTasks}
           keyExtractor={(item) => String(item.id)}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
@@ -288,10 +332,7 @@ export default function TaskListScreen() {
             const submission = taskSubmissionByTaskId[String(item.id)];
             const status = submission?.status ?? null;
             const isInReview = status === 'flagged';
-            const isCompleted =
-              status === 'auto_approved' ||
-              status === 'approved' ||
-              status === 'reviewed';
+            const isCompleted = isCompletedStatus(status);
             const isSubmittedButNotComplete =
               Boolean(submission) && !isCompleted;
             const isDisabled = isCompleted;
