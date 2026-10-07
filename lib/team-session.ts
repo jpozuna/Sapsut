@@ -395,33 +395,3 @@ export async function joinTeam(inviteCode: string): Promise<TeamSession> {
   await saveTeamSession(session);
   return session;
 }
-
-// ---------------------------------------------------------------------------
-// Compatibility shims. Screens still import these until T-14/T-15 move them to
-// the session; M-02 deletes them.
-// ---------------------------------------------------------------------------
-
-/** @deprecated Read the session with `getTeamSession()` / `useTeamSession()`. */
-export type TeamIdScope = 'participant' | 'organizer';
-
-/**
- * @deprecated Use `getTeamSession()`. Returns the session's team id for the
- * participant scope and null for the organizer scope.
- */
-export async function getSavedTeamId(
-  scope: TeamIdScope = 'participant',
-): Promise<string | null> {
-  const session = await getTeamSession();
-  return scope === 'participant' ? (session?.teamId ?? null) : null;
-}
-
-/** @deprecated No-op. Join a team with `joinTeam()` instead. */
-export async function saveTeamId(
-  _teamId: string,
-  _scope: TeamIdScope = 'participant',
-): Promise<void> {}
-
-/** @deprecated No-op. Use `leaveTeam()` instead. */
-export async function clearSavedTeamId(
-  _scope: TeamIdScope = 'participant',
-): Promise<void> {}

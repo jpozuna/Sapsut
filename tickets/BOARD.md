@@ -9,7 +9,7 @@
 | T-14 | Submit and Settings use the team session     | done   | inline | T-12, T-13      | 3              |
 | T-15 | Task list and detail use the team session    | done   | inline | T-12, T-13      | 3              |
 | T-16 | Organizer Teams screen                       | done   | inline | T-11            | 3              |
-| M-02 | Remove deprecated team-session exports (mgr) | todo   | inline | T-14, T-15      | after 3        |
+| M-02 | Remove deprecated team-session exports (mgr) | done   | inline | T-14, T-15      | after 3        |
 
 Concurrency cap: 3
 
@@ -43,6 +43,10 @@ Backend and app must ship together; old app builds stop being able to submit.
 
 Decisions log:
 
+- 2026-10-07: M-02 done. The leaderboard highlights `useTeamSession().teamId`
+  (none for organizers), and the deprecated `getSavedTeamId` / `saveTeamId` /
+  `clearSavedTeamId` / `TeamIdScope` shims are deleted. The legacy
+  `sapsut.teamId.*` key cleanup stays.
 - 2026-10-07: T-15 accepted after one review round. The Tasks tab makes no
   team call and shows no join card while the role is hydrating, and reloads
   statuses on focus. The detail screen uses `withTeamToken` + `httpJson`
