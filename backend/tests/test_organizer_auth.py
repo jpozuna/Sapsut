@@ -26,8 +26,9 @@ CODE = "secret"
 GOOD = {"X-Organizer-Code": CODE}
 BAD = {"X-Organizer-Code": "nope"}
 
-# Non-GET routes intentionally open to participants.
-PUBLIC_NON_GET = {("POST", "/submissions/"), ("POST", "/teams/")}
+# Non-GET routes without organizer auth: POST /submissions/ is team-token guarded, and
+# POST /teams/join is public (it exchanges an invite code for a team token).
+PUBLIC_NON_GET = {("POST", "/submissions/"), ("POST", "/teams/join")}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Non-APIRoute routes FastAPI registers itself (docs and schema); anything else is suspect.
 NON_API_ALLOWLIST = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
@@ -91,7 +92,8 @@ def _guarded_targets(app):
     targets = []
     for r in _api_routes(app):
         is_rescore = r.path == "/submissions/{id}/rescore"
-        if r.path.startswith("/organizer") or is_rescore:
+        is_team_admin = r.path == "/teams/"
+        if r.path.startswith("/organizer") or is_rescore or is_team_admin:
             for m in sorted(r.methods - {"HEAD", "OPTIONS"}):
                 targets.append((m, r.path))
     return targets
@@ -102,6 +104,8 @@ def test_guarded_targets_are_found(real_app):
     assert ("GET", "/organizer/session") in targets
     assert ("POST", "/organizer/tasks") in targets
     assert ("POST", "/submissions/{id}/rescore") in targets
+    assert ("POST", "/teams/") in targets
+    assert ("GET", "/teams/") in targets
     assert len(targets) >= 10
 
 
