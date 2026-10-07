@@ -5,9 +5,10 @@
 | M-00 | Install expo-secure-store (manager)        | done   | inline | none       | 1              |
 | T-01 | Enable RLS and lock down Storage           | todo   | inline | none       | 1              |
 | T-02 | Harden organizer auth on the backend       | todo   | inline | none       | 1              |
-| T-03 | Sanitize error responses and restrict CORS | todo   | inline | none       | 1              |
+| T-03 | Sanitize error responses and restrict CORS | done   | inline | none       | 1              |
 | T-04 | Secure, verified organizer session in app  | todo   | inline | M-00, T-02 | 2              |
 | T-05 | Merge the two organizer route trees        | todo   | inline | none       | 2              |
+| T-06 | Sanitize scoring errors; CORS parse fixes  | todo   | inline | T-03       | 2              |
 | M-01 | Push T-01 migration to live DB (manager)   | todo   | inline | T-01       | after T-01     |
 
 Concurrency cap: 3
@@ -16,6 +17,10 @@ Out of scope: issue #53 item 6 (team isolation, client `photo_path`, invite code
 on `GET /teams/{id}`). The manager opens a separate GitHub issue for it at close-out.
 
 Decisions log:
+
+- 2026-10-07: T-06 added from T-03 review: `services/scoring.py` stores raw
+  AI/storage exception text in `rationale`/`ai_result`, readable via
+  `GET /submissions/{id}`.
 
 - 2026-10-07: Item 6 (team isolation) split into its own issue; team UUIDs are
   public via the leaderboard, so it needs a real team credential.

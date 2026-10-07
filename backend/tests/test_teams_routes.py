@@ -1,3 +1,5 @@
+from typing import Optional
+
 import uuid
 
 import pytest
@@ -22,8 +24,15 @@ class _Resp:
 
 
 class _TeamsTable:
-    def __init__(self, store, *, fail_first_insert: bool = False):
+    def __init__(
+        self,
+        store,
+        *,
+        fail_first_insert: bool = False,
+        always_fail_with: Optional[str] = None,
+    ):
         self._store = store
+        self._always_fail_with = always_fail_with
         self._filters = {}
         self._pending_insert = None
         self._fail_first_insert = fail_first_insert
@@ -48,6 +57,8 @@ class _TeamsTable:
             payload = self._pending_insert
             self._pending_insert = None
             self._insert_calls += 1
+            if self._always_fail_with is not None:
+                raise Exception(self._always_fail_with)
             if self._fail_first_insert and self._insert_calls == 1:
                 raise Exception(
                     'duplicate key value violates unique constraint "teams_invite_code_key"'
@@ -76,9 +87,15 @@ class _TeamsTable:
 
 
 class _FakeSupabase:
-    def __init__(self, *, fail_first_insert: bool = False):
+    def __init__(
+        self, *, fail_first_insert: bool = False, always_fail_with: Optional[str] = None
+    ):
         self._store = {"teams_by_id": {}, "teams_by_invite": {}}
-        self._teams = _TeamsTable(self._store, fail_first_insert=fail_first_insert)
+        self._teams = _TeamsTable(
+            self._store,
+            fail_first_insert=fail_first_insert,
+            always_fail_with=always_fail_with,
+        )
 
     def table(self, name):
         assert name == "teams"
@@ -134,3 +151,23 @@ def test_post_teams_retries_on_invite_code_unique_violation(monkeypatch):
     assert res.status_code == 200
     body = res.json()
     assert "id" in body and "invite_code" in body
+
+
+def test_post_teams_failure_returns_generic_detail(monkeypatch):
+    secret = "connection to db.internal:5432 refused, password=hunter2"
+    client = _make_client(monkeypatch, _FakeSupabase(always_fail_with=secret))
+    res = client.post("/teams/", json={"name": "Team E"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Failed to create team"
+    assert "hunter2" not in res.text
+    assert "db.internal" not in res.text
+
+
+def test_post_teams_exhausted_retries_returns_generic_detail(monkeypatch):
+    msg = 'duplicate key value violates unique constraint "teams_invite_code_key" secret-detail'
+    client = _make_client(monkeypatch, _FakeSupabase(always_fail_with=msg))
+    res = client.post("/teams/", json={"name": "Team F"})
+    assert res.status_code == 500
+    assert res.json()["detail"] == "Failed to create team"
+    assert "secret-detail" not in res.text
+    assert "duplicate" not in res.text

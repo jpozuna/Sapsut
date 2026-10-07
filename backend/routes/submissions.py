@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 import anyio
@@ -11,6 +12,8 @@ from auth.organizer import require_organizer
 from services import get_supabase
 from services.scoring import score_submission
 from services.storage import storage_bucket
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -175,8 +178,9 @@ async def create_submission(
                     file_options={"content-type": content_type, "upsert": "true"},
                 )
             )
-        except Exception as e:
+        except Exception:
             # If photo upload fails, record error immediately and avoid enqueueing scoring.
+            logger.exception("Photo upload failed for submission %s", submission_id)
             submission = {
                 "id": submission_id,
                 "task_id": task_id,
@@ -184,14 +188,14 @@ async def create_submission(
                 "text_answer": normalized_text_answer,
                 "photo_url": None,
                 "status": "error",
-                "rationale": f"Photo upload failed: {e}",
-                "ai_result": {"mode": "storage_upload", "error": str(e)},
+                "rationale": "Photo upload failed",
+                "ai_result": {"mode": "storage_upload", "error": "Photo upload failed"},
             }
             try:
                 supabase.table("submissions").insert(submission).execute()
             except Exception:
                 # Don't mask the storage error with a DB insert failure.
-                pass
+                logger.exception("Failed to record upload-error submission %s", submission_id)
             return {"submission_id": submission_id, "status": "error"}
 
     submission = {
@@ -205,14 +209,10 @@ async def create_submission(
     }
     try:
         supabase.table("submissions").insert(submission).execute()
-    except APIError as e:
-        # Convert common PostgREST errors into a client-friendly 4xx.
-        msg = ""
-        try:
-            msg = (e.args[0] or {}).get("message") or ""
-        except Exception:
-            msg = ""
-        raise HTTPException(status_code=400, detail=msg or "Invalid submission payload")
+    except APIError:
+        # Convert PostgREST errors into a client-friendly 4xx without leaking DB details.
+        logger.exception("Submission insert failed for submission %s", submission_id)
+        raise HTTPException(status_code=400, detail="Invalid submission payload")
     
     background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, stored_photo_path, False)
     

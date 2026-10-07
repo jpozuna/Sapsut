@@ -8,11 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
+_DEFAULT_CORS_ORIGINS = "http://localhost:8081,http://localhost:19006"
+
+
+def _cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ALLOW_ORIGINS") or _DEFAULT_CORS_ORIGINS
+    return [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
+
+
 app = FastAPI(title="Sapsut API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

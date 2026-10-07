@@ -81,7 +81,7 @@ class _StorageBucket:
 
     def upload(self, path, data, file_options=None):
         if self._parent.fail_upload:
-            raise RuntimeError("boom")
+            raise RuntimeError("boom-secret-storage-detail")
         self._parent.upload_calls.append((path, data, file_options))
         return {"path": path}
 
@@ -188,6 +188,15 @@ def test_post_submission_upload_failure_sets_error_status(app_and_client, monkey
     assert inserted["id"] == str(fixed_id)
     assert inserted["status"] == "error"
     assert inserted["photo_url"] is None
+    assert "boom-secret-storage-detail" not in str(inserted["rationale"])
+    assert "boom-secret-storage-detail" not in str(inserted["ai_result"])
+    assert inserted["rationale"] == "Photo upload failed"
+    assert inserted["ai_result"]["error"] == "Photo upload failed"
+
+    # The stored row is readable through GET /submissions/{id}; ensure nothing leaks.
+    got = client.get(f"/submissions/{fixed_id}")
+    assert got.status_code == 200
+    assert "boom-secret-storage-detail" not in got.text
 
 
 def test_get_submission_by_id_includes_signed_url_when_photo_exists(app_and_client):
@@ -264,3 +273,32 @@ def test_list_submissions_omits_signed_urls(app_and_client):
     assert [r["id"] for r in rows] == ["sub2", "sub1"]
     assert all("photo_signed_url" not in r for r in rows)
 
+
+
+def test_post_submission_insert_failure_returns_generic_detail(app_and_client, monkeypatch):
+    from postgrest.exceptions import APIError
+
+    from routes import submissions as submissions_routes
+
+    fake, client = app_and_client
+    task_id = "11111111-1111-1111-1111-111111111111"
+    team_id = "22222222-2222-2222-2222-222222222222"
+
+    class _FailingInsert(_TableQuery):
+        def execute(self):
+            if self._insert_payloads:
+                raise APIError(
+                    {"message": 'insert into "submissions" violates fk secret_constraint_xyz'}
+                )
+            return super().execute()
+
+    monkeypatch.setattr(fake, "table", lambda name: _FailingInsert(fake.db, name))
+    monkeypatch.setattr(submissions_routes, "get_supabase", lambda: fake)
+
+    resp = client.post(
+        "/submissions/",
+        data={"task_id": task_id, "team_id": team_id, "text_answer": "hi"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid submission payload"
+    assert "secret_constraint_xyz" not in resp.text
