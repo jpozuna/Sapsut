@@ -198,7 +198,7 @@ export default function SettingsScreen() {
                 <View style={styles.rowBody}>
                   <AppText variant="title">Enter organizer code</AppText>
                   <AppText variant="caption" tone="secondary">
-                    This stays in memory for this session only.
+                    Saved on this device until you switch back to participant.
                   </AppText>
                 </View>
               </View>

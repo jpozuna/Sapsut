@@ -114,7 +114,7 @@ export default function OrganizerReviewDashboard() {
   }, [sessionOrganizerCode]);
 
   useEffect(() => {
-    // Keep session state in sync while typing (session-only; not persisted).
+    // Keep session state in sync while typing; RoleProvider persists it.
     const trimmed = organizerCode.trim();
     const sessionTrimmed = sessionOrganizerCode.trim();
     if (trimmed === sessionTrimmed) return;
