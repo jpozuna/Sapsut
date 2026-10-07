@@ -66,3 +66,25 @@ def test_wildcard_is_never_allowed(load_main):
 
     res = client.get("/health", headers={"Origin": "https://evil.example.com"})
     assert "access-control-allow-origin" not in res.headers
+
+
+def test_trailing_slash_is_stripped(load_main):
+    main = load_main("https://app.example.com/, https://admin.example.com//")
+    assert main._cors_origins() == ["https://app.example.com", "https://admin.example.com"]
+    client = TestClient(main.app)
+
+    res = client.get("/health", headers={"Origin": "https://app.example.com"})
+    assert res.headers.get("access-control-allow-origin") == "https://app.example.com"
+
+
+def test_empty_allowlist_logs_warning(load_main, caplog):
+    with caplog.at_level("WARNING"):
+        main = load_main("*, ,/")
+    assert main._cors_origins() == []
+    assert any("CORS allowlist is empty" in r.getMessage() for r in caplog.records)
+
+
+def test_non_empty_allowlist_does_not_warn(load_main, caplog):
+    with caplog.at_level("WARNING"):
+        load_main("https://app.example.com")
+    assert not any("CORS allowlist is empty" in r.getMessage() for r in caplog.records)
