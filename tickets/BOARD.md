@@ -7,7 +7,7 @@
 | T-02 | Harden organizer auth on the backend       | in-progress | inline | none       | 1              |
 | T-03 | Sanitize error responses and restrict CORS | done        | inline | none       | 1              |
 | T-04 | Secure, verified organizer session in app  | todo        | inline | M-00, T-02 | 2              |
-| T-05 | Merge the two organizer route trees        | todo        | inline | none       | 2              |
+| T-05 | Merge the two organizer route trees        | done        | inline | none       | 2              |
 | T-06 | Sanitize scoring errors; CORS parse fixes  | done        | inline | T-03       | 2              |
 | T-07 | Validate photo uploads before storing      | todo        | inline | T-01, T-02 | 3              |
 | T-08 | Return only participant-safe submissions   | todo        | inline | T-07       | 4              |
