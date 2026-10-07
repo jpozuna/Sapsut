@@ -1,15 +1,15 @@
 # Board: Team isolation (issue #55)
 
-| ID   | Title                                        | Status | Mode   | Depends on      | Parallel group |
-| ---- | -------------------------------------------- | ------ | ------ | --------------- | -------------- |
-| T-10 | Signed team session token on the backend     | done   | inline | none            | 1              |
-| T-13 | Team session and Join team screen in app     | done   | inline | none (contract) | 1              |
-| T-11 | Organizer-created teams and invite join      | done   | inline | T-10            | 2              |
-| T-12 | Team-scoped submissions, no client paths     | done   | inline | T-10            | 2              |
-| T-14 | Submit and Settings use the team session     | todo   | inline | T-12, T-13      | 3              |
-| T-15 | Task list and detail use the team session    | todo   | inline | T-12, T-13      | 3              |
-| T-16 | Organizer Teams screen                       | todo   | inline | T-11            | 3              |
-| M-02 | Remove deprecated team-session exports (mgr) | todo   | inline | T-14, T-15      | after 3        |
+| ID   | Title                                        | Status      | Mode   | Depends on      | Parallel group |
+| ---- | -------------------------------------------- | ----------- | ------ | --------------- | -------------- |
+| T-10 | Signed team session token on the backend     | done        | inline | none            | 1              |
+| T-13 | Team session and Join team screen in app     | done        | inline | none (contract) | 1              |
+| T-11 | Organizer-created teams and invite join      | done        | inline | T-10            | 2              |
+| T-12 | Team-scoped submissions, no client paths     | done        | inline | T-10            | 2              |
+| T-14 | Submit and Settings use the team session     | in-progress | inline | T-12, T-13      | 3              |
+| T-15 | Task list and detail use the team session    | in-progress | inline | T-12, T-13      | 3              |
+| T-16 | Organizer Teams screen                       | done        | inline | T-11            | 3              |
+| M-02 | Remove deprecated team-session exports (mgr) | todo        | inline | T-14, T-15      | after 3        |
 
 Concurrency cap: 3
 
@@ -43,6 +43,9 @@ Backend and app must ship together; old app builds stop being able to submit.
 
 Decisions log:
 
+- 2026-10-07: T-16 accepted after one review round. No clipboard module is
+  installed, so invite codes are selectable (press and hold) rather than a
+  Copy button; adding `expo-clipboard` is a follow-up (shared `package.json`).
 - 2026-10-07: T-11 and T-12 accepted; the joint security audit confirmed all
   three #55 problems closed. Invite codes are ASCII `[A-Z0-9]` only on join.
   Before the event (user action): check every live team has an upper-case
