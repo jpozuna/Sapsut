@@ -733,7 +733,11 @@ export default function OrganizerCreateTaskScreen() {
                   {isOcring ? 'Parsing…' : 'Scan rubric'}
                 </AppButton>
                 {!createdTask ? (
-                  <AppText variant="caption" tone="tertiary" style={styles.flex}>
+                  <AppText
+                    variant="caption"
+                    tone="tertiary"
+                    style={styles.flex}
+                  >
                     Create the task first to scan and save the rubric.
                   </AppText>
                 ) : null}

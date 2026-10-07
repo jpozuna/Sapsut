@@ -96,11 +96,7 @@ export default function SettingsScreen() {
                     { backgroundColor: colors.accentSoft },
                   ]}
                 >
-                  <IconSymbol
-                    name={modeIcon}
-                    size={17}
-                    color={colors.accent}
-                  />
+                  <IconSymbol name={modeIcon} size={17} color={colors.accent} />
                 </View>
 
                 <View style={styles.rowBody}>
@@ -186,10 +182,7 @@ export default function SettingsScreen() {
             <AppCard variant="sunken">
               <View style={styles.row}>
                 <View
-                  style={[
-                    styles.iconWrap,
-                    { backgroundColor: colors.surface },
-                  ]}
+                  style={[styles.iconWrap, { backgroundColor: colors.surface }]}
                 >
                   <IconSymbol
                     name="info.circle.fill"
@@ -215,7 +208,9 @@ export default function SettingsScreen() {
           animationType="fade"
           onRequestClose={onCancelOrganizer}
         >
-          <View style={[styles.modalBackdrop, { backgroundColor: colors.scrim }]}>
+          <View
+            style={[styles.modalBackdrop, { backgroundColor: colors.scrim }]}
+          >
             <AppCard style={styles.modalCard}>
               <View style={styles.modalHeader}>
                 <View
@@ -254,11 +249,7 @@ export default function SettingsScreen() {
               />
 
               <View style={styles.modalActions}>
-                <AppButton
-                  tone="ghost"
-                  size="sm"
-                  onPress={onCancelOrganizer}
-                >
+                <AppButton tone="ghost" size="sm" onPress={onCancelOrganizer}>
                   Cancel
                 </AppButton>
                 <AppButton

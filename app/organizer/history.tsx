@@ -55,7 +55,9 @@ function decisionMeta(decision: string): {
   tone: AppChipTone;
   icon: IconSymbolName;
 } {
-  const d = String(decision || '').trim().toLowerCase();
+  const d = String(decision || '')
+    .trim()
+    .toLowerCase();
   if (d === 'approve')
     return {
       label: 'Approved',
@@ -220,9 +222,7 @@ export default function OrganizerHistoryScreen() {
               </View>
 
               <View style={styles.scoreBlock}>
-                <AppText variant="numeric">
-                  {item.final_score ?? '—'}
-                </AppText>
+                <AppText variant="numeric">{item.final_score ?? '—'}</AppText>
                 <AppText variant="overline" tone="tertiary">
                   pts
                 </AppText>
@@ -275,9 +275,7 @@ export default function OrganizerHistoryScreen() {
         }
       />
 
-      <View
-        style={[styles.segment, { backgroundColor: colors.surfaceSunken }]}
-      >
+      <View style={[styles.segment, { backgroundColor: colors.surfaceSunken }]}>
         <SegmentButton label="Create" onPress={onGoToCreate} />
         <SegmentButton label="Review" onPress={onGoToReview} />
         <SegmentButton label="History" active onPress={() => {}} />

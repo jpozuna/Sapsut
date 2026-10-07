@@ -41,7 +41,12 @@ export function Skeleton({
   return (
     <Animated.View
       style={[
-        { width, height, borderRadius: radius, backgroundColor: colors.skeleton },
+        {
+          width,
+          height,
+          borderRadius: radius,
+          backgroundColor: colors.skeleton,
+        },
         animatedStyle,
         style,
       ]}
@@ -55,11 +60,7 @@ export function SkeletonCard() {
 
   return (
     <View
-      style={[
-        styles.card,
-        { backgroundColor: colors.surface },
-        elevation(1),
-      ]}
+      style={[styles.card, { backgroundColor: colors.surface }, elevation(1)]}
     >
       <View style={styles.row}>
         <Skeleton width="55%" height={18} />

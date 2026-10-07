@@ -428,11 +428,7 @@ export default function TaskSubmitScreen() {
               style={{ backgroundColor: colors.dangerSoft }}
             >
               <View style={styles.noticeRow}>
-                <IconSymbol
-                  name="wifi.slash"
-                  size={18}
-                  color={colors.danger}
-                />
+                <IconSymbol name="wifi.slash" size={18} color={colors.danger} />
                 <AppText
                   variant="callout"
                   style={[styles.noticeText, { color: colors.onDangerSoft }]}

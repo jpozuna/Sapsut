@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Pre-push checks. Mirrors the lint/format steps in .github/workflows/ci.yml so
+# CI failures surface here instead of after the push.
+set -uo pipefail
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+status=0
+
+# The pyenv shim can resolve on PATH while failing to execute, so each
+# candidate is probed by actually running it.
+find_ruff() {
+  if ruff --version >/dev/null 2>&1; then
+    echo "ruff"
+  elif backend/venv/bin/ruff --version >/dev/null 2>&1; then
+    echo "backend/venv/bin/ruff"
+  elif python3 -m ruff --version >/dev/null 2>&1; then
+    echo "python3 -m ruff"
+  fi
+}
+
+printf '\n[pre-push] ruff — backend lint\n'
+ruff_cmd="$(find_ruff)"
+if [ -z "$ruff_cmd" ]; then
+  printf '  ruff not found. Install it:  backend/venv/bin/pip install ruff\n'
+  status=1
+elif ! $ruff_cmd check backend/; then
+  printf '  Fix with:  %s check --fix backend/\n' "$ruff_cmd"
+  status=1
+fi
+
+printf '\n[pre-push] prettier — format check\n'
+if ! npx --no-install prettier --check "**/*.{ts,tsx,js,jsx,json,md,yml,yaml}"; then
+  printf '  Fix with:  npm run format\n'
+  status=1
+fi
+
+if [ "$status" -ne 0 ]; then
+  printf '\n[pre-push] FAILED — push aborted.\n'
+  printf '           Override with: git push --no-verify\n\n'
+  exit 1
+fi
+
+printf '\n[pre-push] all checks passed.\n\n'

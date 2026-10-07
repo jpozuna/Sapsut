@@ -59,7 +59,11 @@ export function AppErrorState({
     onGoBack ?? (canGoBack ? () => router.back() : undefined);
   const primaryAction =
     onRetry ?? handleGoBack ?? (() => router.replace('/(tabs)'));
-  const primaryLabel = onRetry ? 'Try again' : handleGoBack ? 'Go back' : 'Go home';
+  const primaryLabel = onRetry
+    ? 'Try again'
+    : handleGoBack
+      ? 'Go back'
+      : 'Go home';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.canvas }]}>

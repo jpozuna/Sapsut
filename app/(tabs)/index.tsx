@@ -174,7 +174,9 @@ export default function TaskListScreen() {
 
   const activeTasks = useMemo(() => {
     const nowMs = Date.now();
-    return tasks.filter((t) => (t.is_active ?? true) && isTaskOpenNow(t, nowMs));
+    return tasks.filter(
+      (t) => (t.is_active ?? true) && isTaskOpenNow(t, nowMs),
+    );
   }, [tasks]);
 
   const completedCount = useMemo(() => {
@@ -231,7 +233,10 @@ export default function TaskListScreen() {
                     size={13}
                     color={colors.accent}
                   />
-                  <AppText variant="label" style={{ color: colors.accentOnSoft }}>
+                  <AppText
+                    variant="label"
+                    style={{ color: colors.accentOnSoft }}
+                  >
                     {`${earnedPoints} pts`}
                   </AppText>
                 </View>

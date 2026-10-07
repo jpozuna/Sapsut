@@ -242,7 +242,9 @@ export default function LeaderboardScreen() {
                   <View style={styles.scoreBlock}>
                     <AppText
                       variant="numeric"
-                      style={{ color: isPodium ? colors.accent : colors.textPrimary }}
+                      style={{
+                        color: isPodium ? colors.accent : colors.textPrimary,
+                      }}
                     >
                       {String(toScore(item))}
                     </AppText>

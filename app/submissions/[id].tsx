@@ -48,9 +48,17 @@ function statusMeta(status: string): {
   switch (status) {
     case 'auto_approved':
     case 'approved':
-      return { label: 'Approved', tone: 'success', icon: 'checkmark.seal.fill' };
+      return {
+        label: 'Approved',
+        tone: 'success',
+        icon: 'checkmark.seal.fill',
+      };
     case 'reviewed':
-      return { label: 'Reviewed', tone: 'accent', icon: 'checkmark.circle.fill' };
+      return {
+        label: 'Reviewed',
+        tone: 'accent',
+        icon: 'checkmark.circle.fill',
+      };
     case 'flagged':
       return {
         label: 'Under review',
@@ -324,15 +332,14 @@ export default function SubmissionConfirmationScreen() {
 
           {isError ? (
             <Animated.View entering={FadeInDown.delay(90).duration(280)}>
-              <AppCard variant="outlined" style={{ borderColor: colors.danger }}>
+              <AppCard
+                variant="outlined"
+                style={{ borderColor: colors.danger }}
+              >
                 <AppText variant="overline" tone="tertiary">
                   What happened
                 </AppText>
-                <AppText
-                  variant="body"
-                  tone="danger"
-                  style={styles.cardBody}
-                >
+                <AppText variant="body" tone="danger" style={styles.cardBody}>
                   {`We hit an error processing your submission${
                     rationale ? `: ${rationale}` : '.'
                   }`}

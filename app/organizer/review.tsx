@@ -286,7 +286,10 @@ export default function OrganizerReviewDashboard() {
             {photo ? (
               <Image
                 source={{ uri: photo }}
-                style={[styles.photo, { backgroundColor: colors.surfaceSunken }]}
+                style={[
+                  styles.photo,
+                  { backgroundColor: colors.surfaceSunken },
+                ]}
                 contentFit="cover"
                 transition={180}
               />
@@ -380,9 +383,7 @@ export default function OrganizerReviewDashboard() {
         }
       />
 
-      <View
-        style={[styles.segment, { backgroundColor: colors.surfaceSunken }]}
-      >
+      <View style={[styles.segment, { backgroundColor: colors.surfaceSunken }]}>
         <SegmentButton label="Create" onPress={goToCreate} />
         <SegmentButton label="Review" active onPress={() => {}} />
         <SegmentButton label="History" onPress={goToHistory} />
@@ -409,9 +410,7 @@ export default function OrganizerReviewDashboard() {
       </View>
 
       {error ? (
-        <View
-          style={[styles.errorBox, { backgroundColor: colors.dangerSoft }]}
-        >
+        <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft }]}>
           <IconSymbol
             name="exclamationmark.triangle.fill"
             size={16}
