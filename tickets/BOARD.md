@@ -21,23 +21,16 @@ Backend and app must ship together; old app builds stop being able to submit.
 
 Board closed 2026-10-07: all tickets done.
 
-Follow-ups (not yet filed):
+Follow-ups (filed 2026-10-07):
 
-- Light-mode accent contrast: white on `accent` `#E07B18` (~3:1) on filled
-  buttons, and accent-as-text on light surfaces, app-wide.
-- Organizer nav: Teams link on Review and History, one shared `OrganizerNav`,
-  and `TAB_BAR_CLEARANCE` bottom padding on `history.tsx` and `review.tsx`.
-- Shared UI: `AppButton size="sm"` is 38pt (add `HitSlop` or raise it);
-  `AppCard` has no `accessibilityHint`.
-- `expo-clipboard` for a one-tap Copy on invite codes (shared `package.json`).
-- Web photo upload: the `{uri, name, type}` FormData part doesn't upload on
-  web (pre-existing).
-- Scoring and organizer rescore still download a legacy `photo_url` unchecked;
-  reuse the `_signable_photo_path` check there (fits #58).
-- For #56: `POST /teams/join` has no limit (invite codes are ~40 bits), and
-  multipart bodies are parsed before `require_team`.
-- Per-team token revocation (deferred; rotating `TEAM_SESSION_SECRET` signs
-  out every team).
+- #63 Light-mode accent contrast on buttons and accent text
+- #64 Organizer nav: Teams link on Review/History, shared nav, tab-bar clearance
+- #65 Shared UI: 44pt small `AppButton`, `accessibilityHint` on `AppCard`
+- #66 One-tap Copy for invite codes (`expo-clipboard`)
+- #67 Web build: photo submissions don't upload a file
+- #68 Scoring and organizer review use legacy photo paths unchecked
+- #69 Per-team token revocation
+- #56 (comment added): limit `POST /teams/join`; multipart parsed before auth
 
 ## Contract (fixed for all tickets)
 
