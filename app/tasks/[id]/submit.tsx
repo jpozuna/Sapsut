@@ -279,11 +279,25 @@ export default function TaskSubmitScreen() {
           photoAsset.fileName?.trim() ||
           `submission-${taskId}-${Date.now()}.jpg`;
         const type = photoAsset.mimeType?.trim() || 'image/jpeg';
-        fd.append('photo', {
-          uri: photoAsset.uri,
-          name,
-          type,
-        } as unknown as Blob);
+        if (Platform.OS === 'web') {
+          // On web FormData needs a real Blob/File; a `{ uri }` object would be
+          // stringified. A failure here is caught below and shown as a submit error.
+          let blob: Blob =
+            photoAsset.file ??
+            (await (
+              await fetch(photoAsset.uri, { signal: controller.signal })
+            ).blob());
+          if (!blob.type.startsWith('image/')) {
+            blob = new Blob([blob], { type });
+          }
+          fd.append('photo', blob, name);
+        } else {
+          fd.append('photo', {
+            uri: photoAsset.uri,
+            name,
+            type,
+          } as unknown as Blob);
+        }
       }
 
       const { res, body } = await withTeamToken(async (token) => {
