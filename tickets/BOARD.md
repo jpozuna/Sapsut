@@ -1,4 +1,23 @@
-# Board: Legacy photo paths in scoring and review (issue #68)
+# Board: Web photo submissions upload a real file (issue #67)
+
+| ID   | Title                                        | Status | Mode   | Depends on | Parallel group |
+| ---- | -------------------------------------------- | ------ | ------ | ---------- | -------------- |
+| T-18 | Upload a real file for web photo submissions | done   | inline | none       | 1              |
+
+Concurrency cap: 3
+
+Out of scope: HEIC MIME in scoring (#61), other submission hardening (#58).
+
+Decisions log:
+
+- 2026-10-08: T-18 accepted in one round. The web path sends the picker `File`
+  or a fetched Blob, re-typed with the asset MIME (default `image/jpeg`) when
+  the Blob type isn't `image/*`. `withTeamToken` doesn't retry, so the
+  FormData is sent once. Not tested in a browser.
+
+---
+
+## Previous board: Legacy photo paths in scoring and review (issue #68), done
 
 | ID   | Title                                            | Status | Mode   | Depends on | Parallel group |
 | ---- | ------------------------------------------------ | ------ | ------ | ---------- | -------------- |
