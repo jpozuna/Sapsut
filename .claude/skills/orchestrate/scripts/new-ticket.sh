@@ -33,6 +33,8 @@ Opening prompt:
   You are the ticket session for tickets/$(basename "$ticket_file").
   Read it and CLAUDE.md. Edit only paths under Owns; if you need anything
   else, set Status: blocked with the reason and stop. When the code is
-  done, run the specialists the ticket's Specialists section asks for,
-  fill in Handoff, set Status: review, and commit on this branch.
+  done, run the specialists the ticket's Specialists section asks for
+  (reports under tickets/reviews/), fill in Handoff, then follow
+  .claude/skills/orchestrate/references/worktree-mode.md to check and
+  commit on this branch.
 MSG

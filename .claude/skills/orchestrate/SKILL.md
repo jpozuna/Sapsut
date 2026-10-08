@@ -1,112 +1,154 @@
 ---
 name: orchestrate
-description: Act as the manager for a multi-part coding goal. Break the goal into tickets with clear goals, explicit hand-offs and distinct file ownership, hand each ticket to a ticket-worker subagent (or a separate worktree session for big tickets), run review/test/research specialists on each result, and review every hand-off before committing. Use when the user runs /orchestrate or explicitly asks to plan, split up, parallelize or manage a piece of work as tickets.
+description: Act as the manager for a multi-part coding goal. A planner subagent writes tickets with clear goals, explicit hand-offs and distinct file ownership; ticket-worker subagents (or worktree sessions for big tickets) implement them; review, test and audit specialists check each result; a verifier gates the PR. The manager decides, and keeps its own context small. Use when the user runs /orchestrate or explicitly asks to plan, split up, parallelize or manage a piece of work as tickets.
 disable-model-invocation: true
 ---
 
 # Orchestrate
 
-You are the manager. You plan, delegate and review. You do not write
-feature code yourself unless a ticket is too small to be worth delegating.
+You are the manager. You decide; others plan, build, check and record.
 
-There are no native threads in this setup. Work is delegated two ways:
+`ORCH` below means `python3 .claude/skills/orchestrate/scripts/orch.py`.
 
-- **Inline (default).** Each ticket goes to a `ticket-worker` subagent in
-  this session. Subagents cannot call other subagents, so you, the manager,
-  run the specialists (`test-writer`, `code-reviewer`, `researcher`) on each
-  ticket after its worker returns.
-- **Worktree.** For a ticket that is large, long-running, or needs its own
-  dev server or test run that would collide with others, the user runs it
-  in a separate Claude Code session in its own git worktree. See
-  `references/worktree-mode.md`.
+## Context budget
 
-Mark each ticket's mode on the board. Most tickets should be inline.
+Every turn re-reads your whole conversation, so what you read stays expensive
+for the rest of the session. The board and ticket files are the shared
+memory; your context should hold little more than the board and verdicts.
 
-## 1. Understand before splitting
+- Don't read source files or full diffs. The planner reads code to plan,
+  the code-reviewer reads it to verify, and `ORCH` summarizes the rest.
+- Subagents write full reports to `tickets/reviews/` and return a short
+  verdict. Read a report only to settle a disputed finding, and then `grep`
+  for that finding's ID instead of reading the whole file.
+- Point workers at ticket files. Don't paste hand-offs into prompts.
+- Prefer one `ORCH` call over several git commands.
 
-Read `CLAUDE.md`, any `docs/DECISIONS.md` or brief, and the relevant code.
-If CLAUDE.md has an "Orchestration specialists" section, use the agent
-names it maps instead of the defaults. Restate the goal in one or two
-sentences and list open questions. Resolve naming and vocabulary questions
-with the user before any ticket is written. Do not plan around guesses.
+## 0. Start or resume
 
-Check `git status`. If the working tree is dirty, ask the user to commit or
-stash first, so each ticket's changes can be isolated.
+- `/orchestrate resume`, or an open board in `tickets/BOARD.md` with tickets
+  not done: run `ORCH resume` and continue from the step it implies. Ticket
+  files are the truth when they disagree with the board.
+- Otherwise, start at step 1 with the user's goal. If no goal was given, ask
+  for one. "An issue" means: propose the most important open GitHub issue
+  and confirm it.
 
-## 2. Write tickets
+The working tree must be clean outside `tickets/`. If it isn't, ask the user
+to commit or stash first.
 
-Create `tickets/` at the repo root if missing, plus `tickets/BOARD.md`.
-Write one file per ticket, `tickets/T-01-short-slug.md`, using
-`references/ticket-template.md`. Every field is required.
+## 1. Plan (planner)
 
-Rules that prevent the three scale failures:
+Launch `planner` with the goal, the issue number if any, and any constraints
+the user stated.
 
-1. **Overlapping scope.** Every path a ticket edits is listed under `Owns`.
-   No path appears in two tickets' `Owns`. Shared files (config, routes,
-   types, prompts, schemas, lockfiles) get their own ticket or stay with the
-   manager. If two tickets both need a file, merge them or sequence them.
-   Inline workers share one working directory, so this rule is what keeps
-   them from overwriting each other.
-2. **Blocked dependencies.** `Depends on` names ticket IDs, never vague
-   phrases. A ticket with unmet dependencies is not started. Prefer a short
-   foundation ticket (types, interfaces, stubs) first so later tickets can
-   run in parallel against a fixed contract.
-3. **Unclear objectives.** `Goal` is one outcome. `Done when` is testable
-   by someone who did not write the code. If you cannot write `Done when`,
-   the ticket is not ready.
+- If it returns `Questions:`, ask them with AskUserQuestion, then send the
+  answers to the same planner with SendMessage. It keeps its context.
+- When it returns the board, run `ORCH validate`. If it fails, send the
+  failures back to the planner.
 
-Size: one ticket should be one reviewable commit. If it needs more than
-about five owned files or touches two unrelated areas, split it.
+You don't write tickets. To change the plan, tell the planner what to change.
 
-## 3. Show the plan, then wait
+## 2. Approve
 
-Present BOARD.md: tickets, mode (inline or worktree), dependency order,
-and which run in parallel. **Do not start any work until the user
-approves.** Run at most 3 inline workers at once. Every subagent spends
-usage, so if the tickets in a group are small, run them one at a time.
+Present the board table from the planner's return, its decisions, and any
+`M-NN` manager steps. In the same approval question, settle:
 
-## 4. Delegate
+- whether to push and open a PR after the pre-PR gate passes
+- whether to hand off to a fresh session between groups (step 6)
 
-**Inline tickets.** Launch a `ticket-worker` for each ticket in the current
-parallel group, in a single message so they run concurrently. Give each
-worker only: the ticket file path, and the hand-offs of the tickets it
-depends on (paste them in). Not the whole plan.
+**Do not start any work until the user approves.**
 
-**Worktree tickets.** Run
-`bash .claude/skills/orchestrate/scripts/new-ticket.sh T-NN-short-slug` and give
-the user its output (the commands and the opening prompt). Then continue
-with inline tickets while they work.
+## 3. Run a group
 
-## 5. Review each hand-off
+For the next group (`ORCH resume` marks tickets READY):
 
-When a ticket reaches `Status: review`:
+1. Do the group's `M-NN` steps and `Deletes` (`git rm -q <path>`) yourself
+   first.
+2. Launch one `ticket-worker` per ticket, at most 3, in a single message.
+   The prompt is only: "Implement `tickets/T-NN-slug.md`. Its dependencies'
+   hand-offs are in their ticket files." Add any short user instruction that
+   matters for this ticket.
+3. **Worktree tickets:** run
+   `bash .claude/skills/orchestrate/scripts/new-ticket.sh T-NN-short-slug` and
+   give the user its output. See `references/worktree-mode.md`.
 
-1. Scope: `git status --porcelain` and `git diff HEAD --stat`. Every changed
-   or new path must sit under that ticket's `Owns` (or be its own ticket
-   file). For worktree tickets, use `git diff main...<branch> --stat`.
-2. Specialists, per the ticket's `Specialists` section: run `test-writer`
-   if tests: yes, then `code-reviewer`, telling each which ticket and which
-   paths to look at. Run `researcher` only if the ticket asked a question
-   the worker could not answer. Run any extra specialists the ticket names
-   (see "Orchestration specialists" in CLAUDE.md), e.g. `security-auditor`
-   or `ui-ux-reviewer`; the user approving the board counts as asking.
-3. Check each `Done when` item against the actual code, not the summary.
-   Confirm repo checks in CLAUDE.md pass.
-4. Accept or return:
-   - **Accept, inline:** format, then commit only that ticket's paths:
-     `npx prettier --write --ignore-unknown <Owns paths> tickets/`, then
-     `git add <Owns paths> tickets/T-NN-*.md tickets/BOARD.md && git commit -m "T-NN: <title>"`.
-     The pre-push hook fails on unformatted files, including ticket Markdown.
-   - **Accept, worktree:** merge per `references/worktree-mode.md`.
-   - **Return:** send specific fixes back to a new `ticket-worker` with the
-     ticket and the review findings.
-5. On accept, set `Status: done` and update BOARD.md before committing,
-   so the commit records the final state.
+## 4. Check the group
 
-Start dependents only after their dependencies are `done`.
+When every worker in the group has returned:
 
-## 6. Close out
+1. Run `ORCH check T-NN T-NN ...` once for the whole group. This runs scope,
+   format, lint, types and tests, and regenerates route types if routes
+   changed. A FAIL caused by one ticket goes back to that ticket's worker
+   (step 5).
+2. Launch the specialists for every ticket in one message. Give each the
+   ticket path and a report path, `tickets/reviews/T-NN-<agent>.md`.
+   - `code-reviewer`: always. For 2 or 3 related tickets, one review of the
+     whole group works well (one report section per ticket).
+   - Extras from the ticket's `extra` line, per the policy in CLAUDE.md.
+     The user approving the board counts as asking for them.
+   - `test-writer`: only if `tests: yes`, or the worker's
+     `Tests per Done-when item` leaves an item uncovered.
+   - `researcher`: only if the ticket asked a question the worker couldn't
+     answer.
+3. While specialists run, edit nothing in their tickets' `Owns`.
 
-Summarize what shipped, what was deferred, and any decisions made along
-the way. If the repo has `docs/DECISIONS.md`, append those decisions there.
-Never push, deploy or publish unless CLAUDE.md or the user says to.
+## 5. Decide each ticket
+
+From the verdicts:
+
+- **Accept** when no verdict says return or BLOCKED and the check passed:
+  `ORCH accept T-NN --met <items the reviewer marked met> --trailer "<your commit attribution line, if any>"`.
+  It ticks only those items, sets `done` in the ticket and the board,
+  formats, and commits only that ticket's paths. If an item is genuinely
+  unmet but acceptable, pass `--unmet "<reason>"`.
+- **Return** for a not-met Done-when item, a blocking bug, or a Must fix:
+  launch a new `ticket-worker` with the ticket path, the report paths, and
+  the finding IDs to fix. Then run a `code-reviewer` re-review of just those
+  findings.
+- **Don't return for:**
+  - design upgrades: they become a follow-up or a new ticket via the planner
+  - warnings outside the Done-when items: fix them now if small, otherwise
+    follow-up
+  - `Info` items: triage each one as fixed, follow-up or not an issue, and
+    record it in the decisions log. Never just skip it.
+- **Manager edits:** only a fix of at most about 10 lines for a confirmed
+  finding, after all of that ticket's specialists have returned. Then run
+  `ORCH check T-NN` again and add `Manager edit (unreviewed): <what>` to the
+  Handoff.
+
+Record decisions that affect more than one ticket in BOARD.md's decisions
+log. If the repo has `docs/DECISIONS.md`, add them there too. Start
+dependents only after their dependencies are `done`.
+
+## 6. Between groups
+
+If more groups remain and the user chose handoffs at approval, check that
+BOARD.md is current, then tell the user in one line to run `/clear` and then
+`/orchestrate resume`. The next session starts at about 40K tokens of
+context instead of carrying everything so far.
+
+## 7. Pre-PR gate (verifier)
+
+When every ticket is done, launch `verifier` with the report path
+`tickets/reviews/verify-<branch>.md`. On `fail`, return each finding to a
+ticket-worker (or a new ticket via the planner), then run the verifier again.
+
+## 8. Close out
+
+- Move follow-ups into BOARD.md. Filing them as GitHub issues is a public
+  post, so list them and ask once.
+- If the user approved a PR at step 2, push and open it. If pushing is
+  refused, give the user the exact commands.
+- Summarize what shipped, what was deferred, and the decisions made. Never
+  deploy or publish otherwise unless CLAUDE.md or the user says to.
+
+## Small work
+
+For one ticket of at most about 5 files, with no migrations or shared files:
+
+- Write the ticket and a one-row board yourself; it's quicker than a planner
+  run.
+- Skip the handoff question.
+- Run one worker, then one `code-reviewer` with any extras folded into its
+  prompt, `ORCH check`, `ORCH accept`, and the verifier only if the ticket
+  has a `verify-live` question.
