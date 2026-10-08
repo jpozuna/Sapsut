@@ -19,16 +19,18 @@ session must run `npm ci` (and, for backend work,
 `python -m venv backend/venv && backend/venv/bin/pip install -r backend/requirements.txt ruff pytest`)
 before running checks. Copy `backend/.env` over only if the ticket needs it.
 
-The ticket session works like a ticket-worker, except it can run the
-specialist subagents itself (it is a top-level session), and it commits on
-its own branch.
+The ticket session works like a ticket-worker, except it is a top-level
+session, so it runs the specialists itself, with reports under
+`tickets/reviews/`. When they pass, it runs
+`python3 .claude/skills/orchestrate/scripts/orch.py check T-NN` and then
+`orch.py accept T-NN --met ...`, which commits on its own branch.
 
 ## Review and merge
 
 From the main worktree:
 
 ```bash
-git diff main...t-nn-short-slug --stat   # every path must be under Owns
+git diff main...t-nn-short-slug --stat   # every path under Owns, plus its ticket file
 git merge --no-ff t-nn-short-slug
 git worktree remove ../<repo>-T-NN-short-slug
 git branch -d t-nn-short-slug
