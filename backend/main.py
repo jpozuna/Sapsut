@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from services.body_limit import BodyLimitMiddleware
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,8 @@ if not _origins:
         "Set CORS_ALLOW_ORIGINS to a comma-separated list of origins."
     )
 
+# Added before CORSMiddleware so it sits inside it: a 413 still carries CORS headers.
+app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,

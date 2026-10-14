@@ -3,7 +3,7 @@
 | ID   | Title                                      | Status | Mode   | Depends on | Parallel group |
 | ---- | ------------------------------------------ | ------ | ------ | ---------- | -------------- |
 | T-19 | Shared in-memory rate limiter              | done   | inline | none       | 1              |
-| T-21 | Request body cap middleware                | todo   | inline | none       | 1              |
+| T-21 | Request body cap middleware                | done   | inline | none       | 1              |
 | T-20 | Rate limit team join and submission create | todo   | inline | T-19       | 2              |
 
 Concurrency cap: 3
@@ -48,6 +48,11 @@ Decisions log:
   the T-21 body cap.
 - 2026-10-14: Body cap is global at 11 MiB, enforced by an ASGI middleware
   inside CORS. No new dependency.
+- 2026-10-14: Group 1 review triage. T-19/T-21 `except BaseException` in the
+  body cap swallowed CancelledError: fixed by the manager (catch `Exception`).
+  `max_keys<=0` raising StopIteration: not an issue (constant is positive).
+  T-19 W1 (proxy IP): already a follow-up below. T-19 W2 (IPv6 rotation resets
+  a block, unchanged from the old limiter): follow-up, belongs with #57.
 
 Follow-ups (not yet filed):
 
@@ -55,6 +60,9 @@ Follow-ups (not yet filed):
   `--proxy-headers`) once a deployment exists.
 - Shared limiter state (Redis or Postgres) if the backend runs more than one
   worker.
+- Key IPv6 clients by /64 and don't evict blocked keys first (with #57).
+- Time limit on slow request bodies (server/proxy timeout), from the T-21
+  security audit.
 
 ---
 
