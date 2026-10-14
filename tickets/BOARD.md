@@ -4,7 +4,7 @@
 | ---- | ------------------------------------------ | ------ | ------ | ---------- | -------------- |
 | T-19 | Shared in-memory rate limiter              | done   | inline | none       | 1              |
 | T-21 | Request body cap middleware                | done   | inline | none       | 1              |
-| T-20 | Rate limit team join and submission create | todo   | inline | T-19       | 2              |
+| T-20 | Rate limit team join and submission create | done   | inline | T-19       | 2              |
 
 Concurrency cap: 3
 
@@ -53,6 +53,10 @@ Decisions log:
   `max_keys<=0` raising StopIteration: not an issue (constant is positive).
   T-19 W1 (proxy IP): already a follow-up below. T-19 W2 (IPv6 rotation resets
   a block, unchanged from the old limiter): follow-up, belongs with #57.
+- 2026-10-14: T-20 review triage. Join slots reserved up front (20+ concurrent
+  joins from one IP can briefly 429): follow-up, joins are short so unlikely.
+  Proxy peer IP: same follow-up as T-19 W1; must be set before deploying
+  behind a proxy (never `--forwarded-allow-ips="*"`).
 
 Follow-ups (not yet filed):
 
@@ -61,6 +65,8 @@ Follow-ups (not yet filed):
 - Shared limiter state (Redis or Postgres) if the backend runs more than one
   worker.
 - Key IPv6 clients by /64 and don't evict blocked keys first (with #57).
+- Join limiter: count a failure only after the lookup, so a burst of
+  concurrent valid joins from one NAT can't hit 429 (T-20 code review W1).
 - Time limit on slow request bodies (server/proxy timeout), from the T-21
   security audit.
 
