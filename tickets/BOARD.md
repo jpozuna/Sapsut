@@ -1,4 +1,77 @@
-# Board: Web photo submissions upload a real file (issue #67)
+# Board: Abuse limits (issue #56)
+
+| ID   | Title                                      | Status | Mode   | Depends on | Parallel group |
+| ---- | ------------------------------------------ | ------ | ------ | ---------- | -------------- |
+| T-19 | Shared in-memory rate limiter              | done   | inline | none       | 1              |
+| T-21 | Request body cap middleware                | done   | inline | none       | 1              |
+| T-20 | Rate limit team join and submission create | done   | inline | T-19       | 2              |
+
+Concurrency cap: 3
+
+Out of scope: per-IP limits behind a proxy (`X-Forwarded-For`), shared limits
+across workers or restarts, other submission hardening (#58).
+
+## Contract
+
+`backend/services/rate_limit.py` (T-19), used by T-20:
+
+```python
+class SlidingWindowLimiter:
+    def __init__(self, max_events: int, window_seconds: float, *,
+                 max_keys: int = 10_000, sweep_every: int = 100) -> None: ...
+    clock: Callable[[], float]  # instance attribute, default time.monotonic; tests replace it
+    max_events: int; window_seconds: float; max_keys: int; sweep_every: int  # mutable attributes
+    def reserve(self, key: str) -> tuple[Optional[int], float]:
+        """(None, reserved_at) when a slot was taken; (retry_after_seconds, now)
+        when blocked (no slot taken). Check and reserve under one lock."""
+    def release(self, key: str, reserved_at: float) -> None: ...
+    def reset(self) -> None: ...
+
+def client_ip(request: Request) -> str  # request.client.host or "unknown"
+def too_many_requests(retry_after: int, detail: str) -> HTTPException  # 429 + Retry-After
+def reset_all_limiters() -> None  # resets every instance created; autouse in conftest
+```
+
+State is per process and in memory, like the existing organizer limiter.
+
+`backend/services/body_limit.py` (T-21): `MAX_REQUEST_BYTES = MAX_UPLOAD_BYTES + 1024 * 1024`.
+
+Decisions log:
+
+- 2026-10-14: `POST /teams/` is already organizer-only (#55) and the invite
+  lookup was replaced by `POST /teams/join`, so the issue's team-create and
+  lookup items become a per-IP failed-join limit (20 per 10 min). Counting only
+  failures keeps a whole event behind one campus NAT able to join.
+- 2026-10-14: Submission create is limited per team (50 per 10 min, every
+  authenticated attempt counts), not per IP: it now requires a team token, and
+  per-IP would block teams sharing a NAT. Unauthenticated spooling is covered by
+  the T-21 body cap.
+- 2026-10-14: Body cap is global at 11 MiB, enforced by an ASGI middleware
+  inside CORS. No new dependency.
+- 2026-10-14: Group 1 review triage. T-19/T-21 `except BaseException` in the
+  body cap swallowed CancelledError: fixed by the manager (catch `Exception`).
+  `max_keys<=0` raising StopIteration: not an issue (constant is positive).
+  T-19 W1 (proxy IP): already a follow-up below. T-19 W2 (IPv6 rotation resets
+  a block, unchanged from the old limiter): follow-up, belongs with #57.
+- 2026-10-14: T-20 review triage. Join slots reserved up front (20+ concurrent
+  joins from one IP can briefly 429): follow-up, joins are short so unlikely.
+  Proxy peer IP: same follow-up as T-19 W1; must be set before deploying
+  behind a proxy (never `--forwarded-allow-ips="*"`).
+- 2026-10-14: Scope review after the PR (about 600 players, one 24-hour
+  event). Join limit raised from 20 to 200 failures per 10 min per IP: shared
+  campus and carrier IPs plus kickoff typos could trip 20, and the code space
+  already prevents guessing. Dropped follow-ups: shared limiter state (run one
+  worker), IPv6 /64 keying, the concurrent-join reorder (covered by the higher
+  limit), and a slow-body timeout (host proxies time out).
+
+Follow-ups:
+
+- Filed as #76: trusted client IP behind a reverse proxy, for the join and
+  organizer limiters. Needed before deploying behind a proxy.
+
+---
+
+## Previous board: Web photo submissions upload a real file (issue #67), done
 
 | ID   | Title                                        | Status | Mode   | Depends on | Parallel group |
 | ---- | -------------------------------------------- | ------ | ------ | ---------- | -------------- |

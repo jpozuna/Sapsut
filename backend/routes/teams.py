@@ -5,7 +5,7 @@ import re
 import secrets
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from auth.organizer import require_organizer
@@ -17,6 +17,7 @@ from auth.team import (
     require_team,
 )
 from services import get_supabase
+from services.rate_limit import SlidingWindowLimiter, client_ip, too_many_requests
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,16 @@ _NAME_MAX_LENGTH = 80
 _INVITE_CODE_PATTERN = re.compile(r"[A-Z0-9]{1,%d}" % _MAX_INVITE_CODE_INPUT)
 # Team lists carry invite codes and join responses carry a session token.
 _NO_STORE = "no-store"
+
+# Failed invite-code attempts per client IP. A successful join and a server error
+# give their slot back, so only attempts that did not return a team count.
+# High on purpose: many players share one campus or carrier IP and mistype codes
+# at kickoff, and the 8-character code space already makes guessing impractical.
+# This only stops a script from hammering the lookup.
+JOIN_MAX_FAILURES = 200
+JOIN_WINDOW_SECONDS = 600
+_JOIN_BLOCKED_DETAIL = "Too many invite code attempts. Try again later."
+_join_limiter = SlidingWindowLimiter(JOIN_MAX_FAILURES, JOIN_WINDOW_SECONDS)
 
 
 def _generate_invite_code(length: int = 8) -> str:
@@ -113,8 +124,28 @@ def list_teams(response: Response) -> List[Dict[str, Any]]:
 
 
 @router.post("/join")
-def join_team(payload: TeamJoinIn, response: Response) -> Any:
+def join_team(payload: TeamJoinIn, request: Request, response: Response) -> Any:
     """Exchange an invite code for a signed team session token. Public."""
+    # Constants are re-read per request so tests can lower them.
+    _join_limiter.max_events = JOIN_MAX_FAILURES
+    _join_limiter.window_seconds = JOIN_WINDOW_SECONDS
+    ip = client_ip(request)
+    retry_after, reserved_at = _join_limiter.reserve(ip)
+    if retry_after is not None:
+        raise too_many_requests(retry_after, _JOIN_BLOCKED_DETAIL)
+    keep_slot = False
+    try:
+        return _join_team(payload, response)
+    except HTTPException as e:
+        # Only a "no team" answer is a failed guess; server errors are not the client's fault.
+        keep_slot = e.status_code == 404
+        raise
+    finally:
+        if not keep_slot:
+            _join_limiter.release(ip, reserved_at)
+
+
+def _join_team(payload: TeamJoinIn, response: Response) -> Any:
     if not is_configured():
         logger.error("POST /teams/join called but TEAM_SESSION_SECRET is not usable")
         raise HTTPException(status_code=500, detail=NOT_CONFIGURED_DETAIL)

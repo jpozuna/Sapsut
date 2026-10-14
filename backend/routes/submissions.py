@@ -12,6 +12,7 @@ from auth.organizer import require_organizer
 from auth.team import canonical_team_id, require_team
 from services import get_supabase
 from services.photo_paths import server_photo_path
+from services.rate_limit import SlidingWindowLimiter, too_many_requests
 from services.scoring import score_submission
 from services.storage import storage_bucket
 from services.uploads import read_validated_image
@@ -19,6 +20,13 @@ from services.uploads import read_validated_image
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Every create attempt by a team counts, including ones that fail validation, so
+# a team cannot spend unlimited storage uploads and scoring calls.
+SUBMIT_MAX_PER_TEAM = 50
+SUBMIT_WINDOW_SECONDS = 600
+_SUBMIT_BLOCKED_DETAIL = "Too many submissions. Wait a few minutes and try again."
+_submit_limiter = SlidingWindowLimiter(SUBMIT_MAX_PER_TEAM, SUBMIT_WINDOW_SECONDS)
 
 
 def _extract_signed_url(resp: Any) -> Optional[str]:
@@ -162,6 +170,13 @@ async def create_submission(
     photo: UploadFile = File(None),
     token_team_id: str = Depends(require_team),
 ):
+    # Constants are re-read per request so tests can lower them.
+    _submit_limiter.max_events = SUBMIT_MAX_PER_TEAM
+    _submit_limiter.window_seconds = SUBMIT_WINDOW_SECONDS
+    retry_after, _ = _submit_limiter.reserve(token_team_id)
+    if retry_after is not None:
+        raise too_many_requests(retry_after, _SUBMIT_BLOCKED_DETAIL)
+
     # The team always comes from the token. A client team_id is only checked against it.
     _check_team_param(team_id, token_team_id)
     team_id = token_team_id
