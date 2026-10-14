@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 
 import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
@@ -15,6 +16,7 @@ from services.photo_paths import server_photo_path
 from services.rate_limit import SlidingWindowLimiter, too_many_requests
 from services.scoring import score_submission
 from services.storage import storage_bucket
+from services.task_window import is_listed, is_open
 from services.uploads import read_validated_image
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,9 @@ SUBMIT_MAX_PER_TEAM = 50
 SUBMIT_WINDOW_SECONDS = 600
 _SUBMIT_BLOCKED_DETAIL = "Too many submissions. Wait a few minutes and try again."
 _submit_limiter = SlidingWindowLimiter(SUBMIT_MAX_PER_TEAM, SUBMIT_WINDOW_SECONDS)
+
+_ONE_SUBMISSION_ERROR = "This task only allows one submission per team."
+_UNIQUE_VIOLATION = "23505"
 
 
 def _extract_signed_url(resp: Any) -> Optional[str]:
@@ -194,21 +199,34 @@ async def create_submission(
     try:
         task = (
             supabase.table("tasks")
-            .select("id,type,allow_multiple_submissions")
+            .select("id,type,allow_multiple_submissions,is_active,opens_at,closes_at")
             .eq("id", task_id)
             .single()
             .execute()
             .data
         )
-        allow_multiple = bool(task.get("allow_multiple_submissions", False))
-        task_type = (task.get("type") or "").strip()
+    except APIError as exc:
+        # PostgREST reports "no rows" from .single() as PGRST116; that is a missing task.
+        if exc.code == "PGRST116":
+            task = None
+        else:
+            logger.exception("Task lookup failed for submission %s", submission_id)
+            raise HTTPException(status_code=500, detail="Could not load the task.")
     except Exception:
-        # If the column doesn't exist yet (migration not applied), default to single-submission behavior.
-        allow_multiple = False
-        task_type = ""
+        logger.exception("Task lookup failed for submission %s", submission_id)
+        raise HTTPException(status_code=500, detail="Could not load the task.")
 
-    if not allow_multiple:
-        existing = (
+    # Inactive and unopened tasks look missing so their existence is not revealed.
+    now = datetime.now(timezone.utc)
+    if not task or not is_listed(task, now):
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not is_open(task, now):
+        raise HTTPException(status_code=403, detail="This task is closed.")
+    allow_multiple = bool(task.get("allow_multiple_submissions", False))
+    task_type = (task.get("type") or "").strip()
+
+    def _existing_submission() -> Optional[Dict[str, Any]]:
+        rows = (
             supabase.table("submissions")
             .select("id")
             .eq("task_id", task_id)
@@ -219,11 +237,17 @@ async def create_submission(
             .execute()
             .data
         )
-        if existing:
-            return {
-                "error": "This task only allows one submission per team.",
-                "existing_submission_id": existing[0]["id"],
-            }
+        if not rows:
+            return None
+        return {
+            "error": _ONE_SUBMISSION_ERROR,
+            "existing_submission_id": rows[0]["id"],
+        }
+
+    if not allow_multiple:
+        already = _existing_submission()
+        if already:
+            return already
 
     normalized_text_answer = text_answer or ""
 
@@ -287,13 +311,32 @@ async def create_submission(
     }
     try:
         supabase.table("submissions").insert(submission).execute()
-    except APIError:
+    except APIError as exc:
+        if exc.code == _UNIQUE_VIOLATION:
+            # A concurrent request for the same team and task won the race (the
+            # unique index caught it). Drop our photo and answer like the pre-check.
+            logger.info("Duplicate submission %s lost the race", submission_id)
+            if stored_photo_path:
+                try:
+                    path = stored_photo_path
+                    await anyio.to_thread.run_sync(
+                        lambda: supabase.storage.from_(storage_bucket()).remove([path])
+                    )
+                except Exception:
+                    logger.warning("Could not remove the photo for submission %s", submission_id)
+            try:
+                already = _existing_submission()
+            except Exception:
+                logger.exception("Existing-submission lookup failed for %s", submission_id)
+                already = None
+            if already:
+                return already
         # Convert PostgREST errors into a client-friendly 4xx without leaking DB details.
         logger.exception("Submission insert failed for submission %s", submission_id)
         raise HTTPException(status_code=400, detail="Invalid submission payload")
-    
+
     background_tasks.add_task(score_submission, submission_id, task_id, team_id, normalized_text_answer, stored_photo_path, False)
-    
+
     return {"submission_id": submission_id, "status": "pending"}
 
 
@@ -307,12 +350,17 @@ def rescore_submission(
     payload: RescoreIn,
     background_tasks: BackgroundTasks,
 ) -> Dict[str, Any]:
+    # A non-UUID id can't exist, and sending it to a uuid column makes PostgREST fail.
+    submission_id = canonical_team_id(id)
+    if submission_id is None:
+        raise HTTPException(status_code=400, detail="submission_id must be a UUID")
+
     supabase = get_supabase()
 
     row = (
         supabase.table("submissions")
         .select("id,task_id,team_id,text_answer,photo_url,status,score,rationale,ai_result")
-        .eq("id", id)
+        .eq("id", submission_id)
         .maybe_single()
         .execute()
         .data

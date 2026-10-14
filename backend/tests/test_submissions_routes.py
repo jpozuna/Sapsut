@@ -938,3 +938,259 @@ def test_get_submission_signing_failure_logs_the_id_only(app_and_client, monkeyp
     assert SUB1 in caplog.text
     assert path not in caplog.text
     assert "storage-secret-detail" not in caplog.text
+
+
+# --- Task window and duplicate race (T-23) ---------------------------------------
+
+
+def _future():
+    from datetime import datetime, timedelta, timezone
+
+    return (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+
+
+def _past():
+    from datetime import datetime, timedelta, timezone
+
+    return (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+
+def _submit_with_photo(client):
+    return client.post(
+        "/submissions/",
+        data={"task_id": TASK_ID, "text_answer": "hi"},
+        files={"photo": ("x.png", b"pngbytes", "image/png")},
+    )
+
+
+def _assert_no_side_effects(fake, calls):
+    assert fake.upload_calls == []
+    assert fake.db["submissions"] == []
+    assert calls == []
+
+
+def test_post_submission_missing_task_is_404(app_and_client, monkeypatch):
+    fake, client = app_and_client
+    calls = _capture_scoring(monkeypatch)
+    fake.db["tasks"].clear()
+
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Task not found"}
+    _assert_no_side_effects(fake, calls)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"is_active": False}, {"opens_at": "FUTURE"}],
+    ids=["inactive", "unopened"],
+)
+def test_post_submission_inactive_or_unopened_task_looks_missing(
+    app_and_client, monkeypatch, overrides
+):
+    fake, client = app_and_client
+    calls = _capture_scoring(monkeypatch)
+    overrides = {k: (_future() if v == "FUTURE" else v) for k, v in overrides.items()}
+    fake.db["tasks"][0].update(overrides)
+
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Task not found"}
+    _assert_no_side_effects(fake, calls)
+
+
+def test_post_submission_closed_task_is_403(app_and_client, monkeypatch):
+    fake, client = app_and_client
+    calls = _capture_scoring(monkeypatch)
+    fake.db["tasks"][0].update({"opens_at": _past(), "closes_at": _past()})
+
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 403
+    assert resp.json() == {"detail": "This task is closed."}
+    _assert_no_side_effects(fake, calls)
+
+
+def test_post_submission_inside_window_is_accepted(app_and_client):
+    fake, client = app_and_client
+    fake.db["tasks"][0].update({"opens_at": _past(), "closes_at": _future(), "is_active": True})
+
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+
+
+def test_post_submission_task_lookup_error_is_500_without_details(app_and_client, monkeypatch):
+    fake, client = app_and_client
+    calls = _capture_scoring(monkeypatch)
+
+    class _BrokenTasks(_TableQuery):
+        def execute(self):
+            if self._name == "tasks":
+                raise RuntimeError("secret-db-host-detail")
+            return super().execute()
+
+    monkeypatch.setattr(fake, "table", lambda name: _BrokenTasks(fake.db, name))
+
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 500
+    assert "secret-db-host-detail" not in resp.text
+    _assert_no_side_effects(fake, calls)
+
+
+def test_post_submission_task_api_error_is_500_but_no_rows_is_404(app_and_client, monkeypatch):
+    from postgrest.exceptions import APIError
+
+    fake, client = app_and_client
+
+    def _failing(code):
+        class _T(_TableQuery):
+            def execute(self):
+                if self._name == "tasks":
+                    raise APIError({"message": "secret-detail", "code": code})
+                return super().execute()
+
+        return _T
+
+    monkeypatch.setattr(fake, "table", lambda name: _failing("PGRST116")(fake.db, name))
+    assert _submit_with_photo(client).status_code == 404
+
+    monkeypatch.setattr(fake, "table", lambda name: _failing("42P01")(fake.db, name))
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 500
+    assert "secret-detail" not in resp.text
+    assert fake.upload_calls == []
+
+
+def test_post_submission_rate_limit_runs_before_task_lookup(app_and_client, monkeypatch):
+    from routes import submissions as submissions_routes
+
+    fake, client = app_and_client
+    monkeypatch.setattr(submissions_routes, "SUBMIT_MAX_PER_TEAM", 1)
+    fake.db["tasks"].clear()
+
+    assert _submit_with_photo(client).status_code == 404
+    assert _submit_with_photo(client).status_code == 429
+
+
+class _RaceTable(_TableQuery):
+    """Insert hits the unique index as if a concurrent request won."""
+
+    winner = None
+
+    def insert(self, payload):
+        # The failed insert stores nothing; the winner lands when it errors.
+        self._insert_payloads.append(payload)
+        return self
+
+    def execute(self):
+        if self._name == "submissions" and self._insert_payloads:
+            from postgrest.exceptions import APIError
+
+            self._db["submissions"].append(self.winner)
+            raise APIError(
+                {"message": 'duplicate key value violates unique constraint "x"', "code": "23505"}
+            )
+        return super().execute()
+
+
+def _race_setup(fake, monkeypatch, status="pending"):
+    fake.db["tasks"][0].update({"allow_multiple_submissions": False, "type": "text"})
+    winner = _row(sub_id=SUB2, status=status, photo_url=None)
+    _RaceTable.winner = winner
+    monkeypatch.setattr(fake, "table", lambda name: _RaceTable(fake.db, name))
+    # The pre-check sees nothing; the winner only appears when our insert fails.
+    return winner
+
+
+def test_post_submission_duplicate_race_returns_already_submitted(app_and_client, monkeypatch):
+    fake, client = app_and_client
+    calls = _capture_scoring(monkeypatch)
+    _race_setup(fake, monkeypatch)
+
+    resp = client.post("/submissions/", data={"task_id": TASK_ID, "text_answer": "hi"})
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "error": "This task only allows one submission per team.",
+        "existing_submission_id": SUB2,
+    }
+    assert calls == []
+
+
+def test_post_submission_duplicate_race_removes_uploaded_photo(app_and_client, monkeypatch):
+    fake, client = app_and_client
+    calls = _capture_scoring(monkeypatch)
+    removed = []
+    monkeypatch.setattr(
+        _StorageBucket, "remove", lambda self, paths: removed.append(paths), raising=False
+    )
+    _race_setup(fake, monkeypatch)
+
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 200
+    assert resp.json()["existing_submission_id"] == SUB2
+    (uploaded_path, _data, _opts) = fake.upload_calls[0]
+    assert removed == [[uploaded_path]]
+    assert calls == []
+
+
+def test_post_submission_duplicate_race_survives_photo_removal_failure(
+    app_and_client, monkeypatch
+):
+    fake, client = app_and_client
+
+    def boom(self, paths):
+        raise RuntimeError("storage-secret-detail")
+
+    monkeypatch.setattr(_StorageBucket, "remove", boom, raising=False)
+    _race_setup(fake, monkeypatch)
+
+    resp = _submit_with_photo(client)
+    assert resp.status_code == 200
+    assert resp.json()["existing_submission_id"] == SUB2
+    assert "storage-secret-detail" not in resp.text
+
+
+def test_post_submission_duplicate_race_ignores_error_rows(app_and_client, monkeypatch):
+    fake, client = app_and_client
+    _race_setup(fake, monkeypatch, status="error")
+
+    # No non-error row to point at, so it falls back to the generic 400.
+    resp = client.post("/submissions/", data={"task_id": TASK_ID, "text_answer": "hi"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid submission payload"
+
+
+def test_post_submission_other_insert_errors_stay_400(app_and_client, monkeypatch):
+    from postgrest.exceptions import APIError
+
+    fake, client = app_and_client
+
+    class _FkFail(_TableQuery):
+        def execute(self):
+            if self._insert_payloads:
+                raise APIError({"message": "fk violation", "code": "23503"})
+            return super().execute()
+
+    monkeypatch.setattr(fake, "table", lambda name: _FkFail(fake.db, name))
+    resp = client.post("/submissions/", data={"task_id": TASK_ID, "text_answer": "hi"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid submission payload"
+
+
+def test_rescore_non_uuid_id_is_400_without_supabase(app_and_client, monkeypatch):
+    from routes import submissions as submissions_routes
+
+    _fake, client = app_and_client
+    monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
+
+    def _boom():
+        raise AssertionError("database must not be touched")
+
+    monkeypatch.setattr(submissions_routes, "get_supabase", _boom)
+    resp = client.post(
+        "/submissions/not-a-uuid/rescore",
+        headers={"X-Organizer-Code": "secret"},
+        json={"force": False},
+    )
+    assert resp.status_code == 400
+    assert resp.json() == {"detail": "submission_id must be a UUID"}

@@ -3,7 +3,7 @@
 | ID   | Title                                                  | Status | Mode   | Depends on | Parallel group |
 | ---- | ------------------------------------------------------ | ------ | ------ | ---------- | -------------- |
 | T-22 | Migration for one-submission index and atomic criteria | done   | inline | none       | 1              |
-| T-23 | Enforce task windows and one submission server-side    | todo   | inline | none       | 1              |
+| T-23 | Enforce task windows and one submission server-side    | done   | inline | none       | 1              |
 | T-24 | Production hardening and atomic criteria replace       | todo   | inline | none       | 1              |
 | M-01 | Apply the T-22 migration to the live Supabase project  | todo   | inline | T-22       | 2              |
 
