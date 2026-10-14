@@ -11,6 +11,7 @@ import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+from auth.team import canonical_team_id
 from auth.organizer import (
     CODE_REQUIRED_DETAIL,
     format_expiry,
@@ -26,6 +27,17 @@ from services.uploads import read_validated_image
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_organizer)])
+
+
+def _uuid_or_400(name: str, value: str) -> str:
+    """The canonical (lowercase, hyphenated) form of a UUID path id, else 400.
+
+    Checked before any Supabase call so malformed ids never reach the database.
+    """
+    canonical = canonical_team_id(value)
+    if canonical is None:
+        raise HTTPException(status_code=400, detail=f"{name} must be a UUID")
+    return canonical
 
 
 @router.post("/session")
@@ -157,6 +169,7 @@ def organizer_create_task(task: OrganizerTaskCreateIn) -> Any:
 
 @router.get("/tasks/{task_id}")
 def organizer_get_task(task_id: str) -> Any:
+    task_id = _uuid_or_400("task_id", task_id)
     supabase = get_supabase()
     try:
         return supabase.table("tasks").select("*").eq("id", task_id).single().execute().data
@@ -167,6 +180,7 @@ def organizer_get_task(task_id: str) -> Any:
 
 @router.put("/tasks/{task_id}")
 def organizer_update_task(task_id: str, task: OrganizerTaskCreateIn) -> Any:
+    task_id = _uuid_or_400("task_id", task_id)
     supabase = get_supabase()
     payload = task.model_dump(exclude_none=True)
     try:
@@ -183,11 +197,7 @@ class RubricOcrOut(BaseModel):
 
 @router.post("/tasks/{task_id}/rubric-ocr", response_model=RubricOcrOut)
 async def ocr_rubric_image(task_id: str, image: UploadFile = File(...)) -> RubricOcrOut:
-    # Validate UUID early.
-    try:
-        uuid.UUID(str(task_id))
-    except Exception:
-        raise HTTPException(status_code=400, detail="task_id must be a UUID")
+    task_id = _uuid_or_400("task_id", task_id)
 
     # Type (415) and size (413) are checked before OCR; reads at most 10 MB + 1 byte.
     validated = await read_validated_image(image)
@@ -247,11 +257,8 @@ def _extract_signed_url(resp: Any) -> Optional[str]:
 
 @router.post("/tasks/{task_id}/photos")
 async def upload_task_photo(task_id: str, photo: UploadFile = File(...)) -> Dict[str, Any]:
+    task_id = _uuid_or_400("task_id", task_id)
     supabase = get_supabase()
-    try:
-        uuid.UUID(str(task_id))
-    except Exception:
-        raise HTTPException(status_code=400, detail="task_id must be a UUID")
 
     # Type (415) and size (413) are checked before anything is stored.
     validated = await read_validated_image(photo)
@@ -284,11 +291,8 @@ async def upload_task_photo(task_id: str, photo: UploadFile = File(...)) -> Dict
 
 @router.get("/tasks/{task_id}/photos")
 async def list_task_photos(task_id: str) -> Any:
+    task_id = _uuid_or_400("task_id", task_id)
     supabase = get_supabase()
-    try:
-        uuid.UUID(str(task_id))
-    except Exception:
-        raise HTTPException(status_code=400, detail="task_id must be a UUID")
 
     try:
         rows = (
@@ -357,6 +361,7 @@ class OverrideIn(BaseModel):
 
 @router.post("/review-queue/{queue_id}/approve")
 def approve_review_queue_item(queue_id: str) -> Dict[str, Any]:
+    queue_id = _uuid_or_400("queue_id", queue_id)
     supabase = get_supabase()
     queue_row = _get_queue_row_or_404(queue_id)
     submission = _get_submission_or_404(queue_row["submission_id"])
@@ -397,6 +402,7 @@ def approve_review_queue_item(queue_id: str) -> Dict[str, Any]:
 
 @router.post("/review-queue/{queue_id}/override")
 def override_review_queue_item(queue_id: str, payload: OverrideIn) -> Dict[str, Any]:
+    queue_id = _uuid_or_400("queue_id", queue_id)
     supabase = get_supabase()
     queue_row = _get_queue_row_or_404(queue_id)
     submission = _get_submission_or_404(queue_row["submission_id"])
@@ -550,6 +556,7 @@ def rescore_submission(
     payload: RescoreIn,
     background_tasks: BackgroundTasks,
 ) -> Dict[str, Any]:
+    submission_id = _uuid_or_400("submission_id", submission_id)
     supabase = get_supabase()
     row = (
         supabase.table("submissions")
@@ -603,24 +610,20 @@ class CriteriaUpdateIn(BaseModel):
 
 @router.put("/tasks/{task_id}/criteria")
 def replace_task_criteria(task_id: str, payload: CriteriaUpdateIn) -> Dict[str, Any]:
+    task_id = _uuid_or_400("task_id", task_id)
     supabase = get_supabase()
 
-    # Replace semantics: wipe then insert.
+    # One RPC deletes and inserts in a single transaction, so a failure keeps the old criteria.
+    criteria = [{"criteria_type": c.criteria_type, "value": c.value} for c in payload.criteria]
     try:
-        supabase.table("task_criteria").delete().eq("task_id", task_id).execute()
+        inserted = (
+            supabase.rpc("replace_task_criteria", {"p_task_id": task_id, "p_criteria": criteria})
+            .execute()
+            .data
+            or []
+        )
     except Exception:
-        # If delete isn't supported / table missing, surface a generic error.
-        logger.exception("Failed to clear criteria for task %s", task_id)
-        raise HTTPException(status_code=400, detail="Failed to clear existing criteria for task")
-
-    rows: List[Dict[str, Any]] = [
-        {"task_id": task_id, "criteria_type": c.criteria_type, "value": c.value} for c in payload.criteria
-    ]
-    try:
-        inserted = supabase.table("task_criteria").insert(rows).execute().data or []
-    except Exception:
-        logger.exception("Failed to insert criteria for task %s", task_id)
+        logger.exception("Failed to replace criteria for task %s", task_id)
         raise HTTPException(status_code=400, detail="Failed to save task criteria")
 
     return {"task_id": task_id, "inserted": inserted}
-
