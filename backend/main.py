@@ -22,7 +22,15 @@ def _cors_origins() -> list[str]:
     return [o for o in origins if o and o != "*"]
 
 
-app = FastAPI(title="Sapsut API")
+def _is_production() -> bool:
+    return (os.getenv("ENV") or "").strip().lower() in {"prod", "production"}
+
+
+if _is_production():
+    # No public API docs or schema in production.
+    app = FastAPI(title="Sapsut API", docs_url=None, redoc_url=None, openapi_url=None)
+else:
+    app = FastAPI(title="Sapsut API")
 
 _origins = _cors_origins()
 if not _origins:
@@ -51,4 +59,4 @@ app.include_router(organizer.router, prefix="/organizer", tags=["organizer"])
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "env": os.getenv("ENV", "dev")}
+    return {"status": "ok"}

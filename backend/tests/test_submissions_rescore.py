@@ -15,6 +15,9 @@ except Exception:
         _HAVE_MULTIPART = False
 
 
+_SUB1 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+
 class _Resp:
     def __init__(self, data):
         self.data = data
@@ -81,9 +84,9 @@ def app_client(monkeypatch):
         called["calls"].append((args, kwargs))
 
     submission = {
-        "id": "sub1",
-        "task_id": "task1",
-        "team_id": "team1",
+        "id": _SUB1,
+        "task_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "team_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "text_answer": "hi",
         "photo_url": None,
         "status": "pending",
@@ -106,7 +109,7 @@ def test_rescore_requires_organizer_header(monkeypatch, app_client):
     client, _fake, _called = app_client
     monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
 
-    resp = client.post("/submissions/sub1/rescore", json={"force": False})
+    resp = client.post(f"/submissions/{_SUB1}/rescore", json={"force": False})
     assert resp.status_code == 401
     assert "X-Organizer-Code" in resp.json()["detail"]
 
@@ -115,16 +118,16 @@ def test_rescore_non_terminal_queues_and_logs(monkeypatch, app_client):
     client, fake, called = app_client
     monkeypatch.setenv("ORGANIZER_DEMO_CODE", "secret")
 
-    resp = client.post("/submissions/sub1/rescore", headers={"X-Organizer-Code": "secret"}, json={"force": False})
+    resp = client.post(f"/submissions/{_SUB1}/rescore", headers={"X-Organizer-Code": "secret"}, json={"force": False})
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "queued"
-    assert body["submission_id"] == "sub1"
+    assert body["submission_id"] == _SUB1
     assert body["force"] is False
 
     assert fake.db["review_queue"], "expected audit row inserted into review_queue"
     audit = fake.db["review_queue"][0]
-    assert audit["submission_id"] == "sub1"
+    assert audit["submission_id"] == _SUB1
     assert audit["claude_score"] == 3
     assert audit["claude_rationale"] == "ok"
 
@@ -139,7 +142,7 @@ def test_rescore_terminal_without_force_returns_400(monkeypatch, app_client):
 
     fake.db["submissions"][0]["status"] = "reviewed"
 
-    resp = client.post("/submissions/sub1/rescore", headers={"X-Organizer-Code": "secret"}, json={"force": False})
+    resp = client.post(f"/submissions/{_SUB1}/rescore", headers={"X-Organizer-Code": "secret"}, json={"force": False})
     assert resp.status_code == 400
     assert called["calls"] == []
 
@@ -150,7 +153,7 @@ def test_rescore_terminal_with_force_queues(monkeypatch, app_client):
 
     fake.db["submissions"][0]["status"] = "reviewed"
 
-    resp = client.post("/submissions/sub1/rescore", headers={"X-Organizer-Code": "secret"}, json={"force": True})
+    resp = client.post(f"/submissions/{_SUB1}/rescore", headers={"X-Organizer-Code": "secret"}, json={"force": True})
     assert resp.status_code == 200
     assert resp.json()["force"] is True
 
@@ -266,7 +269,7 @@ def real_scoring_client(monkeypatch):
 
     def make(photo_url, team_id=_TEAM, task_id=_TASK):
         row = {
-            "id": "sub1",
+            "id": _SUB1,
             "task_id": task_id,
             "team_id": team_id,
             "text_answer": "hi",
@@ -289,7 +292,7 @@ def real_scoring_client(monkeypatch):
     return make, scoring_db, vision
 
 
-_RESCORE_URLS = ["/submissions/sub1/rescore", "/organizer/submissions/sub1/rescore"]
+_RESCORE_URLS = [f"/submissions/{_SUB1}/rescore", f"/organizer/submissions/{_SUB1}/rescore"]
 
 
 @pytest.mark.parametrize("url", _RESCORE_URLS)

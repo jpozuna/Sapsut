@@ -3,6 +3,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
+_RQ1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+_SUB1 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+_TASK1 = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+
+
 class _Resp:
     def __init__(self, data):
         self.data = data
@@ -63,8 +68,8 @@ class _FakeSupabase:
         self.db = {
             "review_queue": [
                 {
-                    "id": "rq1",
-                    "submission_id": "sub1",
+                    "id": _RQ1,
+                    "submission_id": _SUB1,
                     "claude_score": 3,
                     "claude_rationale": "ok",
                     "confidence": 0.5,
@@ -73,15 +78,15 @@ class _FakeSupabase:
             ],
             "submissions": [
                 {
-                    "id": "sub1",
-                    "task_id": "task1",
+                    "id": _SUB1,
+                    "task_id": _TASK1,
                     "team_id": "team1",
                     "text_answer": "hi",
                     "photo_url": None,
                     "status": "flagged",
                 }
             ],
-            "tasks": [{"id": "task1", "title": "T", "type": "text", "max_points": 5}],
+            "tasks": [{"id": _TASK1, "title": "T", "type": "text", "max_points": 5}],
         }
 
     def table(self, name):
@@ -309,7 +314,7 @@ def test_review_responses_do_not_mutate_stored_rows(monkeypatch, app_client):
 
 def _override(client, score):
     return client.post(
-        "/organizer/review-queue/rq1/override",
+        f"/organizer/review-queue/{_RQ1}/override",
         json={"score": score, "rationale": "because"},
         headers={"X-Organizer-Code": "secret"},
     )
@@ -323,7 +328,7 @@ def test_override_above_max_points_is_rejected(monkeypatch, app_client):
     assert resp.json() == {"detail": "Score cannot exceed the task's maximum of 5 points."}
     # Nothing was finalized and the queue item is still there.
     assert app_client.finalized == []
-    assert [r["id"] for r in app_client.fake.db["review_queue"]] == ["rq1"]
+    assert [r["id"] for r in app_client.fake.db["review_queue"]] == [_RQ1]
 
 
 def test_override_at_max_points_succeeds(monkeypatch, app_client):
@@ -331,7 +336,7 @@ def test_override_at_max_points_succeeds(monkeypatch, app_client):
 
     resp = _override(app_client, 5)
     assert resp.status_code == 200
-    assert resp.json() == {"submission_id": "sub1", "status": "reviewed", "score": 5}
+    assert resp.json() == {"submission_id": _SUB1, "status": "reviewed", "score": 5}
     assert [f["score"] for f in app_client.finalized] == [5]
     assert app_client.fake.db["review_queue"] == []
 
@@ -439,24 +444,29 @@ def test_update_task_error_is_generic(failing_client):
     _assert_no_leak(client.put(f"/organizer/tasks/{TASK_UUID}", json=TASK_BODY, headers=AUTH), 400)
 
 
-def test_criteria_delete_error_is_generic(failing_client):
-    client = failing_client(_FailingSupabase())
+def test_criteria_rpc_error_is_generic(failing_client):
+    class _RpcFails:
+        def rpc(self, *a, **kw):
+            raise RuntimeError(LEAK)
+
+    client = failing_client(_RpcFails())
     resp = client.put(
         f"/organizer/tasks/{TASK_UUID}/criteria",
         json={"criteria": [{"criteria_type": "exact", "value": "a"}]},
         headers=AUTH,
     )
     _assert_no_leak(resp, 400)
+    assert resp.json() == {"detail": "Failed to save task criteria"}
 
 
-def test_criteria_insert_error_is_generic(failing_client):
-    class _InsertFails(_OkTable):
-        def insert(self, *a, **kw):
+def test_criteria_rpc_execute_error_is_generic(failing_client):
+    class _Call:
+        def execute(self):
             raise RuntimeError(LEAK)
 
     class _Fake:
-        def table(self, _name):
-            return _InsertFails()
+        def rpc(self, *a, **kw):
+            return _Call()
 
     client = failing_client(_Fake())
     resp = client.put(

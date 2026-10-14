@@ -1,4 +1,104 @@
-# Board: Abuse limits (issue #56)
+# Board: Submission integrity and production hardening (issue #58)
+
+| ID   | Title                                                  | Status | Mode   | Depends on | Parallel group |
+| ---- | ------------------------------------------------------ | ------ | ------ | ---------- | -------------- |
+| T-22 | Migration for one-submission index and atomic criteria | done   | inline | none       | 1              |
+| T-23 | Enforce task windows and one submission server-side    | done   | inline | none       | 1              |
+| T-24 | Production hardening and atomic criteria replace       | done   | inline | none       | 1              |
+| M-01 | Apply the T-22 migration to the live Supabase project  | done   | inline | T-22       | 2              |
+
+Concurrency cap: 3
+
+Out of scope: per-IP limits behind a proxy (#76), frontend changes (the app
+already filters windows and shows a string `detail`), an organizer task-list
+endpoint.
+
+## Contract
+
+Migration `supabase/migrations/20261014000000_submission_integrity.sql` (T-22):
+
+- `submissions.single_submission boolean not null default true`, kept equal to
+  `not tasks.allow_multiple_submissions` by a `BEFORE INSERT OR UPDATE OF
+task_id` trigger. The backend does not send it.
+- Unique partial index `submissions_one_active_per_team_task_idx` on
+  `(team_id, task_id) where single_submission and status <> 'error'`. A
+  violating insert fails with Postgres code `23505` (PostgREST `APIError.code
+== "23505"`).
+- `public.replace_task_criteria(p_task_id uuid, p_criteria jsonb) returns
+setof public.task_criteria`; `p_criteria` is a JSON array of
+  `{"criteria_type": text, "value": text}`. Delete and insert in one call.
+  Called as `supabase.rpc("replace_task_criteria", {"p_task_id": id,
+"p_criteria": [...]}).execute().data`. Execute granted to `service_role`
+  only.
+
+`backend/services/task_window.py` (T-23):
+
+```python
+def is_listed(task: Mapping[str, Any], now: datetime) -> bool  # is_active (null = true) and opens_at <= now (null = open)
+def is_open(task: Mapping[str, Any], now: datetime) -> bool    # is_listed and (closes_at is null or now <= closes_at)
+```
+
+`now` is timezone-aware UTC. Participant errors: missing, inactive or unopened
+task gives 404 `"Task not found"`; closed gives 403 `"This task is closed."`.
+Malformed path ids give 400 `"<name> must be a UUID"`.
+
+Production mode: `ENV` trimmed and lowercased is `prod` or `production`.
+
+Decisions log:
+
+- 2026-10-14: A partial index can't read `tasks.allow_multiple_submissions`,
+  so the flag is copied onto each submission by a trigger and the index keys
+  on it. This keeps the guarantee in Postgres (works with concurrent requests
+  and any future writer) without an advisory-lock RPC for the whole create
+  path. Toggling a task's flag later applies only to new submissions.
+- 2026-10-14: Column defaults to `true` (single), so a write that bypasses the
+  trigger fails safe.
+- 2026-10-14: `GET /tasks/` hides inactive and unopened tasks but keeps closed
+  ones listed, matching the issue; submission create rejects all three.
+  Filtering is in Python after the select (task count is small).
+- 2026-10-14: Inactive and unopened tasks look missing (404) to participants so
+  their existence is not revealed; closed is a plain 403.
+- 2026-10-14: Organizers keep seeing every task through
+  `/organizer/tasks/{id}`; the home list already hid inactive and unopened
+  tasks for everyone client-side, so organizer behaviour does not change.
+- 2026-10-14: `/health` drops `env` in every environment (nothing reads it).
+- 2026-10-14: The three tickets run in parallel against this contract; their
+  tests use fakes, so only live runs need M-01 first.
+- 2026-10-14: T-24 owned `backend/tests/test_submissions_rescore.py` after
+  planning: T-23 and T-24 both 400 non-UUID path ids, so its fixtures moved to
+  UUIDs (no assertion weakened).
+- 2026-10-14: M-01 done. Tested locally first (`migration up --local`,
+  rolled-back transactions: duplicate blocked, spoofed flag overridden, error
+  and multi-task duplicates allowed, failed criteria replace keeps old rows,
+  EXECUTE only for service_role). Live verify-live: 0 duplicate pairs (11
+  tasks, 12 submissions). Dry run listed only this migration; pushed; all 12
+  live rows have `single_submission` set. Local Postgres 17.6 segfaults when
+  `authenticated` calls any function it lacks EXECUTE on (reproduced with a
+  trivial function): an image bug, not this migration.
+- 2026-10-14: Review triage. Window check vs insert not atomic (seconds of
+  slack at `closes_at`): not an issue. Photo left behind on a non-23505 insert
+  failure, and approve not clamping `claude_score` to `max_points`:
+  pre-existing, follow-ups. Task flag toggle only affects new submissions:
+  documented here, by design. Organizer criteria type `other` rejected by the
+  DB check: pre-existing, follow-up. Docs hidden only when `ENV` is
+  `prod`/`production`: deploy checklist.
+
+Follow-ups (not yet filed):
+
+- An organizer rescore of an `error` submission that turns it non-error while
+  the team has a newer valid one will hit the unique index in the scoring
+  update. Rare; handle in `services/scoring.py` if seen. (Code review W3,
+  T-22 security W-01.)
+- Deploy checklist: set `ENV=production` so `/docs` and `/openapi.json` are
+  off; apply migrations before or with the backend (the criteria PUT needs the
+  RPC); trusted proxy client IP (#76).
+- Pre-existing: delete the uploaded photo when a submission insert fails for a
+  reason other than the duplicate; clamp `claude_score` to `max_points` on
+  approve; align organizer criteria types with the DB check (`other`).
+
+---
+
+## Previous board: Abuse limits (issue #56), done
 
 | ID   | Title                                      | Status | Mode   | Depends on | Parallel group |
 | ---- | ------------------------------------------ | ------ | ------ | ---------- | -------------- |
