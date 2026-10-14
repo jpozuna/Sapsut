@@ -223,7 +223,7 @@ def test_missing_code_does_not_count_as_failure(client):
         resp = client.get("/organizer/session")
         assert resp.status_code == 401
         assert resp.json() == {"detail": CODE_REQUIRED_DETAIL}
-    assert organizer_auth._failures == {}
+    assert organizer_auth._limiter._events == {}
     assert client.get("/organizer/session", headers=GOOD).status_code == 200
 
 
@@ -231,7 +231,7 @@ def test_blank_code_does_not_count_as_failure(client):
     for _ in range(MAX_FAILURES * 3):
         assert client.get("/organizer/session", headers={"X-Organizer-Code": ""}).status_code == 401
         assert client.get("/organizer/session", headers={"X-Organizer-Code": "   "}).status_code == 401
-    assert organizer_auth._failures == {}
+    assert organizer_auth._limiter._events == {}
     assert client.get("/organizer/session", headers=GOOD).status_code == 200
 
 
@@ -255,7 +255,7 @@ def test_successful_checks_do_not_count(client):
 
 def test_rate_limit_window_expires(monkeypatch, client):
     clock = [1000.0]
-    monkeypatch.setattr(organizer_auth, "_now", lambda: clock[0])
+    monkeypatch.setattr(organizer_auth._limiter, "clock", lambda: clock[0])
 
     for _ in range(MAX_FAILURES):
         client.get("/organizer/session", headers=BAD)
@@ -279,7 +279,7 @@ def test_rate_limit_is_per_ip(real_app):
 
 def test_blocked_attempts_do_not_extend_the_window(monkeypatch, client):
     clock = [1000.0]
-    monkeypatch.setattr(organizer_auth, "_now", lambda: clock[0])
+    monkeypatch.setattr(organizer_auth._limiter, "clock", lambda: clock[0])
     for _ in range(MAX_FAILURES):
         client.get("/organizer/session", headers=BAD)
 
@@ -435,7 +435,7 @@ def test_valid_token_wins_over_wrong_code(client):
     token = _mint(client)["token"]
     resp = client.get("/organizer/session", headers={**_bearer(token), **BAD})
     assert resp.status_code == 200
-    assert organizer_auth._failures == {}
+    assert organizer_auth._limiter._events == {}
 
 
 def test_invalid_token_is_not_rescued_by_valid_code(client):
@@ -518,7 +518,7 @@ def test_invalid_tokens_never_count_as_failures(monkeypatch, client):
         for bad in bad_tokens:
             assert client.get("/organizer/session", headers=_bearer(bad)).status_code == 401
 
-    assert organizer_auth._failures == {}
+    assert organizer_auth._limiter._events == {}
     # Never rate limited: the code still works, and a fresh token still works.
     assert client.get("/organizer/session", headers=GOOD).status_code == 200
     clock[0] = 1_800_000_000.0
@@ -588,87 +588,87 @@ def test_invalid_token_while_ip_is_blocked_is_401_not_429(client):
 
 def test_sweep_removes_expired_ips(monkeypatch):
     clock = [1000.0]
-    monkeypatch.setattr(organizer_auth, "_now", lambda: clock[0])
-    monkeypatch.setattr(organizer_auth, "SWEEP_EVERY", 5)
+    monkeypatch.setattr(organizer_auth._limiter, "clock", lambda: clock[0])
+    monkeypatch.setattr(organizer_auth._limiter, "sweep_every", 5)
 
     for ip in ("a", "b", "c"):
-        assert organizer_auth._reserve(ip)[0] is None
-    assert set(organizer_auth._failures) == {"a", "b", "c"}
+        assert organizer_auth._limiter.reserve(ip)[0] is None
+    assert set(organizer_auth._limiter._events) == {"a", "b", "c"}
 
     clock[0] += WINDOW_SECONDS + 1
     # Reservations 4 and 5: the 5th triggers the sweep. Nothing touches a, b or c by name.
-    organizer_auth._reserve("d")
-    assert set(organizer_auth._failures) == {"a", "b", "c", "d"}
-    organizer_auth._reserve("d")
-    assert set(organizer_auth._failures) == {"d"}
-    assert len(organizer_auth._failures["d"]) == 2
+    organizer_auth._limiter.reserve("d")
+    assert set(organizer_auth._limiter._events) == {"a", "b", "c", "d"}
+    organizer_auth._limiter.reserve("d")
+    assert set(organizer_auth._limiter._events) == {"d"}
+    assert len(organizer_auth._limiter._events["d"]) == 2
 
 
 def test_sweep_keeps_unexpired_ips(monkeypatch):
     clock = [1000.0]
-    monkeypatch.setattr(organizer_auth, "_now", lambda: clock[0])
-    monkeypatch.setattr(organizer_auth, "SWEEP_EVERY", 4)
+    monkeypatch.setattr(organizer_auth._limiter, "clock", lambda: clock[0])
+    monkeypatch.setattr(organizer_auth._limiter, "sweep_every", 4)
 
-    organizer_auth._reserve("old")
+    organizer_auth._limiter.reserve("old")
     clock[0] += WINDOW_SECONDS - 10
-    organizer_auth._reserve("recent")
+    organizer_auth._limiter.reserve("recent")
     clock[0] += 20  # "old" is now expired, "recent" is not
-    organizer_auth._reserve("x")
-    organizer_auth._reserve("x")  # 4th reservation sweeps
-    assert set(organizer_auth._failures) == {"recent", "x"}
+    organizer_auth._limiter.reserve("x")
+    organizer_auth._limiter.reserve("x")  # 4th reservation sweeps
+    assert set(organizer_auth._limiter._events) == {"recent", "x"}
 
 
 def test_sweep_runs_inside_real_requests(monkeypatch, client):
     clock = [1000.0]
-    monkeypatch.setattr(organizer_auth, "_now", lambda: clock[0])
-    monkeypatch.setattr(organizer_auth, "SWEEP_EVERY", 3)
+    monkeypatch.setattr(organizer_auth._limiter, "clock", lambda: clock[0])
+    monkeypatch.setattr(organizer_auth._limiter, "sweep_every", 3)
 
     stale = TestClient(client.app, client=("10.9.9.9", 1))
     stale.get("/organizer/session", headers=BAD)
-    assert "10.9.9.9" in organizer_auth._failures
+    assert "10.9.9.9" in organizer_auth._limiter._events
 
     clock[0] += WINDOW_SECONDS + 1
     for _ in range(3):
         client.get("/organizer/session", headers=BAD)
-    assert "10.9.9.9" not in organizer_auth._failures
+    assert "10.9.9.9" not in organizer_auth._limiter._events
 
 
 def test_max_tracked_ips_evicts_the_oldest(monkeypatch):
     clock = [1000.0]
-    monkeypatch.setattr(organizer_auth, "_now", lambda: clock[0])
-    monkeypatch.setattr(organizer_auth, "MAX_TRACKED_IPS", 3)
+    monkeypatch.setattr(organizer_auth._limiter, "clock", lambda: clock[0])
+    monkeypatch.setattr(organizer_auth._limiter, "max_keys", 3)
 
     for ip in ("ip1", "ip2", "ip3"):
-        organizer_auth._reserve(ip)
+        organizer_auth._limiter.reserve(ip)
         clock[0] += 1
-    assert list(organizer_auth._failures) == ["ip1", "ip2", "ip3"]
+    assert list(organizer_auth._limiter._events) == ["ip1", "ip2", "ip3"]
 
-    organizer_auth._reserve("ip4")
-    assert list(organizer_auth._failures) == ["ip2", "ip3", "ip4"]
+    organizer_auth._limiter.reserve("ip4")
+    assert list(organizer_auth._limiter._events) == ["ip2", "ip3", "ip4"]
 
-    organizer_auth._reserve("ip5")
-    assert list(organizer_auth._failures) == ["ip3", "ip4", "ip5"]
-    assert len(organizer_auth._failures) == 3
+    organizer_auth._limiter.reserve("ip5")
+    assert list(organizer_auth._limiter._events) == ["ip3", "ip4", "ip5"]
+    assert len(organizer_auth._limiter._events) == 3
 
 
 def test_max_tracked_ips_does_not_evict_for_an_already_tracked_ip(monkeypatch):
-    monkeypatch.setattr(organizer_auth, "MAX_TRACKED_IPS", 3)
+    monkeypatch.setattr(organizer_auth._limiter, "max_keys", 3)
     for ip in ("ip1", "ip2", "ip3"):
-        organizer_auth._reserve(ip)
-    organizer_auth._reserve("ip2")
-    assert set(organizer_auth._failures) == {"ip1", "ip2", "ip3"}
-    assert len(organizer_auth._failures["ip2"]) == 2
+        organizer_auth._limiter.reserve(ip)
+    organizer_auth._limiter.reserve("ip2")
+    assert set(organizer_auth._limiter._events) == {"ip1", "ip2", "ip3"}
+    assert len(organizer_auth._limiter._events["ip2"]) == 2
 
 
 def test_max_tracked_ips_default_is_bounded():
-    assert organizer_auth.MAX_TRACKED_IPS == 10_000
-    assert organizer_auth.SWEEP_EVERY == 100
+    assert organizer_auth._limiter.max_keys == 10_000
+    assert organizer_auth._limiter.sweep_every == 100
 
 
 def test_release_after_success_leaves_no_tracked_ip(client):
     for _ in range(5):
         assert client.get("/organizer/session", headers=GOOD).status_code == 200
-    assert organizer_auth._failures == {}
+    assert organizer_auth._limiter._events == {}
 
 
 # --- Concurrency ------------------------------------------------------------
@@ -688,7 +688,7 @@ def test_concurrent_wrong_codes_cannot_overshoot_the_limit(real_app):
 
     assert statuses.count(401) == MAX_FAILURES
     assert statuses.count(429) == attempts - MAX_FAILURES
-    assert len(organizer_auth._failures["testclient"]) == MAX_FAILURES
+    assert len(organizer_auth._limiter._events["testclient"]) == MAX_FAILURES
 
 
 def test_concurrent_reserve_never_exceeds_the_limit():
@@ -697,7 +697,7 @@ def test_concurrent_reserve_never_exceeds_the_limit():
 
     def reserve(_):
         barrier.wait()
-        return organizer_auth._reserve("1.2.3.4")[0]
+        return organizer_auth._limiter.reserve("1.2.3.4")[0]
 
     with ThreadPoolExecutor(max_workers=attempts) as pool:
         results = list(pool.map(reserve, range(attempts)))

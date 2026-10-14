@@ -6,31 +6,25 @@ import hmac
 import logging
 import os
 import secrets
-import threading
 import time
-from collections import deque
 from datetime import datetime, timezone
-from typing import Deque, Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 from fastapi import Header, HTTPException, Request
+
+from services.rate_limit import SlidingWindowLimiter, client_ip, too_many_requests
 
 logger = logging.getLogger(__name__)
 
 # --- Failed-code rate limit ------------------------------------------------
 # Wrong organizer codes are rate limited in memory, per client IP. After
 # MAX_FAILURES failures within WINDOW_SECONDS, that IP receives 429 on code
-# checks until its oldest failure ages out of the window.
-# State is per process; it resets on restart and is not shared across workers.
-# Memory is bounded: expired IPs are swept every SWEEP_EVERY reservations and at
-# most MAX_TRACKED_IPS IPs are tracked (the oldest-tracked IP is evicted first).
+# checks until its oldest failure ages out of the window. See
+# services/rate_limit.py for the limiter (per process, bounded memory).
 MAX_FAILURES = 10
 WINDOW_SECONDS = 5 * 60
-SWEEP_EVERY = 100
-MAX_TRACKED_IPS = 10_000
 
-_failures: Dict[str, Deque[float]] = {}
-_lock = threading.Lock()
-_reservations_since_sweep = 0
+_limiter = SlidingWindowLimiter(MAX_FAILURES, WINDOW_SECONDS)
 
 # --- Session tokens --------------------------------------------------------
 # Stateless HMAC-SHA256 tokens: "<b64url(payload)>.<b64url(signature)>" where the
@@ -46,11 +40,6 @@ RATE_LIMITED_DETAIL = "Too many failed organizer code attempts. Try again later.
 NOT_CONFIGURED_DETAIL = "Organizer access is not configured."
 
 
-def _now() -> float:
-    """Monotonic clock for the rate limiter."""
-    return time.monotonic()
-
-
 def _wall_now() -> float:
     """Wall clock (unix seconds) for token expiry."""
     return time.time()
@@ -58,78 +47,7 @@ def _wall_now() -> float:
 
 def reset_rate_limit() -> None:
     """Clear all recorded failures (used by tests)."""
-    global _reservations_since_sweep
-    with _lock:
-        _failures.clear()
-        _reservations_since_sweep = 0
-
-
-def _client_ip(request: Request) -> str:
-    client = request.client
-    return client.host if client and client.host else "unknown"
-
-
-def _prune(ip: str, now: float) -> Optional[Deque[float]]:
-    """Drop expired entries for one IP. Caller holds _lock. None if nothing left."""
-    window = _failures.get(ip)
-    if window is None:
-        return None
-    while window and now - window[0] >= WINDOW_SECONDS:
-        window.popleft()
-    if not window:
-        _failures.pop(ip, None)
-        return None
-    return window
-
-
-def _sweep(now: float) -> None:
-    """Prune every tracked IP. Caller holds _lock."""
-    for ip in list(_failures):
-        _prune(ip, now)
-
-
-def _reserve(ip: str) -> Tuple[Optional[int], float]:
-    """Atomically check the limit and reserve a failure slot for ``ip``.
-
-    Returns ``(retry_after, reserved_at)``. ``retry_after`` is None when a slot
-    was reserved (the caller must keep it on failure or call ``_release`` on
-    success), or the seconds until the block lifts when the IP is blocked (no slot
-    is reserved, so blocked attempts do not extend the block). The check and the
-    reservation happen under one lock acquisition, so concurrent requests cannot
-    overshoot MAX_FAILURES.
-    """
-    global _reservations_since_sweep
-    now = _now()
-    with _lock:
-        _reservations_since_sweep += 1
-        if _reservations_since_sweep >= SWEEP_EVERY:
-            _reservations_since_sweep = 0
-            _sweep(now)
-
-        window = _prune(ip, now)
-        if window is not None and len(window) >= MAX_FAILURES:
-            return max(1, int(WINDOW_SECONDS - (now - window[0])) + 1), now
-
-        if window is None:
-            while len(_failures) >= MAX_TRACKED_IPS:
-                _failures.pop(next(iter(_failures)))
-            window = _failures.setdefault(ip, deque())
-        window.append(now)
-        return None, now
-
-
-def _release(ip: str, reserved_at: float) -> None:
-    """Give back a reserved slot after a successful code check."""
-    with _lock:
-        window = _failures.get(ip)
-        if window is None:
-            return
-        try:
-            window.remove(reserved_at)
-        except ValueError:
-            pass
-        if not window:
-            _failures.pop(ip, None)
+    _limiter.reset()
 
 
 def _derive_key(code: str) -> bytes:
@@ -233,19 +151,15 @@ def require_organizer(
     if not received:
         raise HTTPException(status_code=401, detail=CODE_REQUIRED_DETAIL)
 
-    ip = _client_ip(request)
-    retry_after, reserved_at = _reserve(ip)
+    ip = client_ip(request)
+    retry_after, reserved_at = _limiter.reserve(ip)
     if retry_after is not None:
-        raise HTTPException(
-            status_code=429,
-            detail=RATE_LIMITED_DETAIL,
-            headers={"Retry-After": str(retry_after)},
-        )
+        raise too_many_requests(retry_after, RATE_LIMITED_DETAIL)
 
     if not secrets.compare_digest(received.encode("utf-8"), expected.encode("utf-8")):
         # The reserved slot stays: it is this IP's recorded failure.
         raise HTTPException(status_code=401, detail=CODE_REQUIRED_DETAIL)
 
-    _release(ip, reserved_at)
+    _limiter.release(ip, reserved_at)
     request.state.organizer_auth = "code"
     request.state.organizer_expires_at = None
