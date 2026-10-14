@@ -5,7 +5,7 @@
 | T-22 | Migration for one-submission index and atomic criteria | done   | inline | none       | 1              |
 | T-23 | Enforce task windows and one submission server-side    | done   | inline | none       | 1              |
 | T-24 | Production hardening and atomic criteria replace       | done   | inline | none       | 1              |
-| M-01 | Apply the T-22 migration to the live Supabase project  | todo   | inline | T-22       | 2              |
+| M-01 | Apply the T-22 migration to the live Supabase project  | done   | inline | T-22       | 2              |
 
 Concurrency cap: 3
 
@@ -64,12 +64,37 @@ Decisions log:
 - 2026-10-14: `/health` drops `env` in every environment (nothing reads it).
 - 2026-10-14: The three tickets run in parallel against this contract; their
   tests use fakes, so only live runs need M-01 first.
+- 2026-10-14: T-24 owned `backend/tests/test_submissions_rescore.py` after
+  planning: T-23 and T-24 both 400 non-UUID path ids, so its fixtures moved to
+  UUIDs (no assertion weakened).
+- 2026-10-14: M-01 done. Tested locally first (`migration up --local`,
+  rolled-back transactions: duplicate blocked, spoofed flag overridden, error
+  and multi-task duplicates allowed, failed criteria replace keeps old rows,
+  EXECUTE only for service_role). Live verify-live: 0 duplicate pairs (11
+  tasks, 12 submissions). Dry run listed only this migration; pushed; all 12
+  live rows have `single_submission` set. Local Postgres 17.6 segfaults when
+  `authenticated` calls any function it lacks EXECUTE on (reproduced with a
+  trivial function): an image bug, not this migration.
+- 2026-10-14: Review triage. Window check vs insert not atomic (seconds of
+  slack at `closes_at`): not an issue. Photo left behind on a non-23505 insert
+  failure, and approve not clamping `claude_score` to `max_points`:
+  pre-existing, follow-ups. Task flag toggle only affects new submissions:
+  documented here, by design. Organizer criteria type `other` rejected by the
+  DB check: pre-existing, follow-up. Docs hidden only when `ENV` is
+  `prod`/`production`: deploy checklist.
 
 Follow-ups (not yet filed):
 
 - An organizer rescore of an `error` submission that turns it non-error while
   the team has a newer valid one will hit the unique index in the scoring
-  update. Rare; handle in `services/scoring.py` if seen.
+  update. Rare; handle in `services/scoring.py` if seen. (Code review W3,
+  T-22 security W-01.)
+- Deploy checklist: set `ENV=production` so `/docs` and `/openapi.json` are
+  off; apply migrations before or with the backend (the criteria PUT needs the
+  RPC); trusted proxy client IP (#76).
+- Pre-existing: delete the uploaded photo when a submission insert fails for a
+  reason other than the duplicate; clamp `claude_score` to `max_points` on
+  approve; align organizer criteria types with the DB check (`other`).
 
 ---
 
