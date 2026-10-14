@@ -95,7 +95,7 @@ def _join(client, code):
 def test_join_constants_match_the_spec():
     import routes.teams as teams_routes
 
-    assert teams_routes.JOIN_MAX_FAILURES == 20
+    assert teams_routes.JOIN_MAX_FAILURES == 200
     assert teams_routes.JOIN_WINDOW_SECONDS == 600
 
 

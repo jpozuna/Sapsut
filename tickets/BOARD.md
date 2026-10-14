@@ -57,18 +57,17 @@ Decisions log:
   joins from one IP can briefly 429): follow-up, joins are short so unlikely.
   Proxy peer IP: same follow-up as T-19 W1; must be set before deploying
   behind a proxy (never `--forwarded-allow-ips="*"`).
+- 2026-10-14: Scope review after the PR (about 600 players, one 24-hour
+  event). Join limit raised from 20 to 200 failures per 10 min per IP: shared
+  campus and carrier IPs plus kickoff typos could trip 20, and the code space
+  already prevents guessing. Dropped follow-ups: shared limiter state (run one
+  worker), IPv6 /64 keying, the concurrent-join reorder (covered by the higher
+  limit), and a slow-body timeout (host proxies time out).
 
-Follow-ups (not yet filed):
+Follow-ups:
 
-- Client IP behind a reverse proxy (trusted `X-Forwarded-For` / uvicorn
-  `--proxy-headers`) once a deployment exists.
-- Shared limiter state (Redis or Postgres) if the backend runs more than one
-  worker.
-- Key IPv6 clients by /64 and don't evict blocked keys first (with #57).
-- Join limiter: count a failure only after the lookup, so a burst of
-  concurrent valid joins from one NAT can't hit 429 (T-20 code review W1).
-- Time limit on slow request bodies (server/proxy timeout), from the T-21
-  security audit.
+- Filed as #76: trusted client IP behind a reverse proxy, for the join and
+  organizer limiters. Needed before deploying behind a proxy.
 
 ---
 

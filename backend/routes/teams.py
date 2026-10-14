@@ -33,7 +33,10 @@ _NO_STORE = "no-store"
 
 # Failed invite-code attempts per client IP. A successful join and a server error
 # give their slot back, so only attempts that did not return a team count.
-JOIN_MAX_FAILURES = 20
+# High on purpose: many players share one campus or carrier IP and mistype codes
+# at kickoff, and the 8-character code space already makes guessing impractical.
+# This only stops a script from hammering the lookup.
+JOIN_MAX_FAILURES = 200
 JOIN_WINDOW_SECONDS = 600
 _JOIN_BLOCKED_DETAIL = "Too many invite code attempts. Try again later."
 _join_limiter = SlidingWindowLimiter(JOIN_MAX_FAILURES, JOIN_WINDOW_SECONDS)
