@@ -79,6 +79,10 @@ const MAPPING = {
   'chart.bar.fill': 'bar-chart',
   'tray.fill': 'inbox',
   'wifi.slash': 'wifi-off',
+
+  // Appearance
+  'moon.fill': 'dark-mode',
+  'sun.max.fill': 'light-mode',
 } satisfies Record<string, MaterialIconName>;
 
 export type IconSymbolName = keyof typeof MAPPING;
