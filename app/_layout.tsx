@@ -26,6 +26,7 @@ import { AppErrorBoundary } from '@/components/app-error-boundary';
 import { Palette } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RoleProvider } from '@/lib/role-context';
+import { loadColorSchemePreference } from '@/lib/theme-preference';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -67,6 +68,10 @@ export default function RootLayout() {
   });
 
   const ready = fontsLoaded || Boolean(fontError);
+
+  useEffect(() => {
+    loadColorSchemePreference();
+  }, []);
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});

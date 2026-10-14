@@ -292,8 +292,7 @@ export function TaskSortBar({
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: Spacing.md,
+    flexShrink: 1,
   },
   trigger: {
     flexDirection: 'row',

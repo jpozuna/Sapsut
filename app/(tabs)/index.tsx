@@ -14,6 +14,7 @@ import { SafeScreen, TAB_BAR_CLEARANCE } from '@/components/safe-screen';
 import { ScreenState } from '@/components/screen-state';
 import { SapsutLogo } from '@/components/sapsut-logo';
 import { TaskSortBar } from '@/components/task-sort-bar';
+import { ThemeToggle } from '@/components/theme-toggle';
 import {
   AppButton,
   AppCard,
@@ -269,7 +270,6 @@ export default function TaskListScreen() {
   }, [activeTasks, taskSubmissionByTaskId]);
 
   const total = activeTasks.length;
-  const progress = total > 0 ? completedCount / total : 0;
   const isParticipant = role !== 'organizer';
   const needsTeam = isTeamParticipant && !isSessionLoading && !sessionToken;
 
@@ -286,6 +286,18 @@ export default function TaskListScreen() {
         <ScreenHeader
           title="Tasks"
           subtitle={subtitle}
+          rightSlot={
+            <View style={styles.controls}>
+              {total > 1 ? (
+                <TaskSortBar
+                  value={sort}
+                  onChange={onSortChange}
+                  showStatus={isParticipant}
+                />
+              ) : null}
+              <ThemeToggle />
+            </View>
+          }
           topSlot={
             <>
               <SapsutLogo width={104} height={46} />
@@ -312,30 +324,6 @@ export default function TaskListScreen() {
             </>
           }
         />
-
-        {isParticipant && total > 0 ? (
-          <View
-            style={[styles.track, { backgroundColor: colors.surfaceSunken }]}
-          >
-            <View
-              style={[
-                styles.fill,
-                {
-                  backgroundColor: colors.accent,
-                  width: `${Math.round(progress * 100)}%`,
-                },
-              ]}
-            />
-          </View>
-        ) : null}
-
-        {total > 1 ? (
-          <TaskSortBar
-            value={sort}
-            onChange={onSortChange}
-            showStatus={isParticipant}
-          />
-        ) : null}
 
         <FlatList
           ref={listRef}
@@ -502,22 +490,20 @@ export default function TaskListScreen() {
 }
 
 const styles = StyleSheet.create({
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // Both controls extend their touch area 8px (HitSlop); keep clear space
+    // between those areas so a tap can't land on the wrong one.
+    gap: Spacing.xl,
+    flexShrink: 1,
+  },
   scorePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs + 2,
-    borderRadius: Radius.pill,
-  },
-  track: {
-    height: 6,
-    borderRadius: Radius.pill,
-    overflow: 'hidden',
-    marginBottom: Spacing.base,
-  },
-  fill: {
-    height: '100%',
     borderRadius: Radius.pill,
   },
   listContent: {
